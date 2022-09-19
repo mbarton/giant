@@ -71,14 +71,14 @@ class PanDomainUserProvider(val config: PandaAuthConfig, currentPublicKey: () =>
   override def genesisUser(request: JsValue, time: Epoch): Attempt[PartialUser] = {
     for {
       email <- (request \ "username").validate[String].toAttempt
-      user = DBUser(email, None, None, None, registered = false, None)
+      user = DBUser(email, None, None, None, registered = false, None, None)
       createdUser <- users.createUser(user, UserPermissions.bigBoss)
     } yield createdUser.toPartial
   }
 
   /** create a new user account */
   override def createUser(username: String, request: JsValue): Attempt[PartialUser] = {
-    val user = DBUser(username, None, None, None, registered = false, None)
+    val user = DBUser(username, None, None, None, registered = false, None, None)
     for {
       // we mark this user as not registered so we can cache the display name when we see them
       createdUser <- users.createUser(user, UserPermissions.default)

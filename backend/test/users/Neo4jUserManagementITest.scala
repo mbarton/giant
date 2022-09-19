@@ -17,7 +17,9 @@ import utils.attempt.Attempt
 
 class Neo4jUserManagementITest extends AnyFreeSpec with Matchers with Neo4jTestService with Logging with MockFactory {
   "Neo4JUserManagement" - {
-    val user = DBUser("test", displayName = None, password = None, Some(1234), registered = false, totpSecret = Some(GoogleAuthenticator.sampleSecret))
+    val user = DBUser("test", displayName = None, password = None, Some(1234), registered = false,
+      totpSecret = Some(GoogleAuthenticator.sampleSecret), webAuthnUserHandle = None
+    )
     val permissions = UserPermissions.bigBoss
 
     "Can create a new user" in {

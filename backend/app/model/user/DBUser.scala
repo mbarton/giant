@@ -8,7 +8,7 @@ import utils.auth.totp.{Base32Secret, Secret}
 /* User model for representation in the database */
 case class DBUser(username: String, displayName: Option[String], password: Option[BCryptPassword],
                   invalidationTime: Option[Long], registered: Boolean,
-                  totpSecret: Option[Secret]) {
+                  totpSecret: Option[Secret], webAuthnUserHandle: Option[Secret]) {
   def toPartial = PartialUser(username, displayName.getOrElse(username))
 }
 
@@ -22,7 +22,8 @@ object DBUser {
       user.get("password").optionally(v => BCryptPassword.apply(v.asString)),
       user.get("invalidationTime").optionally(_.asLong),
       user.get("registered").optionally(_.asBoolean).getOrElse(false),
-      user.get("totpSecret").optionally(v => Base32Secret(v.asString))
+      user.get("totpSecret").optionally(v => Base32Secret(v.asString)),
+      user.get("webAuthnUserHandle").optionally(v => Base32Secret(v.asString))
     )
   }
 }

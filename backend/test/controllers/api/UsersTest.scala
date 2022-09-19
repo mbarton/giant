@@ -33,8 +33,8 @@ class UsersTest extends AnyFreeSpec with Matchers with Results with ScalaFutures
   private val validator = new PasswordValidator(12)
   private val totp = Totp.googleAuthenticatorInstance()
 
-  val paul = user.DBUser("paul", Some("Paul Chuckle"), Some(BCryptPassword("invalid")), None, registered = true, None)
-  val barry = user.DBUser("barry", Some("Barry Chuckle"), Some(BCryptPassword("invalid")), None, registered = true, None)
+  val paul = user.DBUser("paul", Some("Paul Chuckle"), Some(BCryptPassword("invalid")), None, registered = true, None, None)
+  val barry = user.DBUser("barry", Some("Barry Chuckle"), Some(BCryptPassword("invalid")), None, registered = true, None, None)
   val users: Map[DBUser, (UserPermissions, List[Collection])] = Map(paul -> (UserPermissions.default, List.empty), barry -> (UserPermissions.default, List.empty))
 
   "UsersController" - {
@@ -114,7 +114,7 @@ class UsersTest extends AnyFreeSpec with Matchers with Results with ScalaFutures
       import test.fixtures.GoogleAuthenticator._
       val originalPasswordText = "bob"
       val originalPassword = BCryptPassword("$2y$14$QfKVhpRMSe1VXi.ghHLJguCY6CmSA.ipNrg8JJZok5xhUxM5wDIem")
-      val bob = DBUser("bob", Some("Spongebob"), Some(originalPassword), None, registered = false, None)
+      val bob = DBUser("bob", Some("Spongebob"), Some(originalPassword), None, registered = false, None, None)
 
       "with require2FA set to false" - {
         "password and registered flag should be updated" in {

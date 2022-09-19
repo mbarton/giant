@@ -92,7 +92,7 @@ class GenesisTest extends AnyFreeSpec with Matchers with Results with AttemptVal
       "executing the checkSetup action again" - {
         "should return setupCompleted: true when another node has inserted a user" in {
           userManagement.createUser(
-            DBUser("bob", Some("bob"), Some(BCryptPassword("bad-hash")), None, registered = false, None), UserPermissions(Set.empty)
+            DBUser("bob", Some("bob"), Some(BCryptPassword("bad-hash")), None, registered = false, None, None), UserPermissions(Set.empty)
           )
           val result = controllerWithNoUsers.checkSetup.apply(FakeRequest())
           val json = contentAsJson(result)
@@ -102,7 +102,7 @@ class GenesisTest extends AnyFreeSpec with Matchers with Results with AttemptVal
     }
 
     "with a user in the database" - {
-      val management = TestUserManagement(List(DBUser("bob", Some("bob"), Some(BCryptPassword("bad-hash")), None, registered = false, None)))
+      val management = TestUserManagement(List(DBUser("bob", Some("bob"), Some(BCryptPassword("bad-hash")), None, registered = false, None, None)))
       val controllerWithAUser = new Genesis(controllerComponents, provider(management), management, true)
 
       "executing the checkSetup action" - {

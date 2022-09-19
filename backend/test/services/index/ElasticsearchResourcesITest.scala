@@ -18,9 +18,9 @@ import org.scalatest.matchers.should.Matchers
 
 class ElasticsearchResourcesITest extends AnyFreeSpec with Matchers with ElasticsearchTestService with IndexTestHelpers {
 
-  val canSeeCatsAndDogsUser = user.DBUser("paul", Some("Paul Chuckle"), Some(BCryptPassword("invalid")), None, registered = true, None)
-  val canSeeCatsUser = user.DBUser("barry", Some("Barry Chuckle"), Some(BCryptPassword("invalid")), None, registered = true, None)
-  val cantSeeCollectionsUser = user.DBUser("larry", Some("Larry"), Some(BCryptPassword("invalid")), None, registered = true, None)
+  val canSeeCatsAndDogsUser = user.DBUser("paul", Some("Paul Chuckle"), Some(BCryptPassword("invalid")), None, registered = true, None, None)
+  val canSeeCatsUser = user.DBUser("barry", Some("Barry Chuckle"), Some(BCryptPassword("invalid")), None, registered = true, None, None)
+  val cantSeeCollectionsUser = user.DBUser("larry", Some("Larry"), Some(BCryptPassword("invalid")), None, registered = true, None, None)
 
   val catCollection = Collection(Uri("cat"), "cat", List.empty, None)
   val dogCollection = Collection(Uri("dog"), "dog", List.empty, None)

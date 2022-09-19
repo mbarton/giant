@@ -75,7 +75,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = true,
           displayName = None,
           invalidationTime = None,
-          totpSecret = None
+          totpSecret = None,
+          webAuthnUserHandle = None
         )
         val userProvider = makeUserProvider(config, TestUserManagement(List(bob)))
 
@@ -95,7 +96,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = true,
           displayName = Some("Bob Bob"),
           invalidationTime = None,
-          totpSecret = None
+          totpSecret = None,
+          webAuthnUserHandle = None
         )
         val userProvider = makeUserProvider(config, TestUserManagement(List(bob)))
 
@@ -115,7 +117,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = true,
           displayName = Some("Bob Bob"),
           invalidationTime = None,
-          totpSecret = None
+          totpSecret = None,
+          webAuthnUserHandle = None
         )
         val userProvider = makeUserProvider(config, TestUserManagement(List(bob)))
 
@@ -135,7 +138,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = true,
           displayName = Some("Bob Bob"),
           invalidationTime = None,
-          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5"))
+          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
+          webAuthnUserHandle = None
         )
         val userProvider = makeUserProvider(config, TestUserManagement(List(bob)))
 
@@ -156,7 +160,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = true,
           displayName = Some("Bob Bob"),
           invalidationTime = None,
-          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5"))
+          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
+          webAuthnUserHandle = None
         )
         val userProvider = makeUserProvider(config, TestUserManagement(List(bob)))
 
@@ -177,7 +182,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = true,
           displayName = Some("Bob Bob"),
           invalidationTime = None,
-          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5"))
+          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
+          webAuthnUserHandle = None
         )
         val userProvider = makeUserProvider(config, TestUserManagement(List(bob)))
 
@@ -200,7 +206,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = false,
           displayName = None,
           invalidationTime = None,
-          totpSecret = None
+          totpSecret = None,
+          webAuthnUserHandle = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
@@ -228,7 +235,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = false,
           displayName = None,
           invalidationTime = None,
-          totpSecret = None
+          totpSecret = None,
+          webAuthnUserHandle = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
@@ -261,7 +269,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = false,
           displayName = None,
           invalidationTime = None,
-          totpSecret = None
+          totpSecret = None,
+          webAuthnUserHandle = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
@@ -290,7 +299,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = false,
           displayName = None,
           invalidationTime = None,
-          totpSecret = None
+          totpSecret = None,
+          webAuthnUserHandle = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
@@ -319,7 +329,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = false,
           displayName = None,
           invalidationTime = None,
-          totpSecret = None
+          totpSecret = None,
+          webAuthnUserHandle = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
@@ -350,7 +361,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
         registered = true,
         displayName = Some("Bob Bob"),
         invalidationTime = None,
-        totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5"))
+        totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
+        webAuthnUserHandle = None
       )
       val users = TestUserManagement(List(bob))
       val userProvider = makeUserProvider(config, users)
@@ -369,7 +381,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = true,
           displayName = Some("Bob Bob"),
           invalidationTime = None,
-          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5"))
+          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
+          webAuthnUserHandle = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
@@ -387,7 +400,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = true,
           displayName = Some("Bob Bob"),
           invalidationTime = None,
-          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5"))
+          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
+          webAuthnUserHandle = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
@@ -408,7 +422,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = true,
           displayName = Some("Bob Bob"),
           invalidationTime = None,
-          totpSecret = None
+          totpSecret = None,
+          webAuthnUserHandle = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
@@ -428,7 +443,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = true,
           displayName = Some("Bob Bob"),
           invalidationTime = None,
-          totpSecret = None
+          totpSecret = None,
+          webAuthnUserHandle = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
@@ -450,7 +466,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = true,
           displayName = Some("Bob Bob"),
           invalidationTime = None,
-          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5"))
+          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
+          webAuthnUserHandle = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
@@ -470,7 +487,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = true,
           displayName = Some("Bob Bob"),
           invalidationTime = None,
-          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5"))
+          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
+          webAuthnUserHandle = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)

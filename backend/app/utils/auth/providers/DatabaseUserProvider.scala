@@ -10,7 +10,7 @@ import services.users.UserManagement
 import services.DatabaseAuthConfig
 import utils.attempt._
 import utils.auth.{PasswordHashing, PasswordValidator, RequireRegistered}
-import utils.auth.totp.{SecureSecretGenerator, TfaToken, Totp}
+import utils.auth.totp.{Algorithm, SecureSecretGenerator, TfaToken, Totp}
 import utils.Epoch
 
 import scala.concurrent.ExecutionContext
@@ -52,7 +52,8 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       _ <- passwordValidator.validate(userData.password)
       secret <- TFACommands.check2FA(config.require2FA, userData.totpActivation, totp, time)
       // We will immediately register after creating
-      user = DBUser(userData.username, None, None, invalidationTime = None, registered = false, totpSecret = None)
+      user = DBUser(userData.username, None, None, invalidationTime = None, registered = false, totpSecret = None,
+        webAuthnUserHandle = Some(ssg.createRandomSecret(Algorithm.HmacSHA512)))
       created <- users.createUser(user, UserPermissions.bigBoss)
       registered <- users.registerUser(userData.username, userData.displayName, Some(encryptedPassword), secret)
     } yield registered.toPartial
@@ -66,7 +67,8 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       hash <- passwordHashing.hash(wholeUser.password)
       user <- users.createUser(
           DBUser(wholeUser.username, Some("New User"), Some(hash),
-            invalidationTime = None, registered = false, totpSecret = None), UserPermissions.default
+            invalidationTime = None, registered = false, totpSecret = None, Some(ssg.createRandomSecret(Algorithm.HmacSHA512))),
+        UserPermissions.default
         )
     } yield user.toPartial
   }

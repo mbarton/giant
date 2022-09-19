@@ -101,7 +101,8 @@ class PanDomainUserProviderTest extends AnyFreeSpec with Matchers with AttemptVa
           registered = true,
           displayName = Some("Bob Bob"),
           invalidationTime = None,
-          totpSecret = None
+          totpSecret = None,
+          webAuthnUserHandle = None
         )
 
         val config = PandaAuthConfig("bob", "bob.key", "bobCookie", require2FA = true, "https://login.bob.example/login", AwsConnection("eu-west-1", None))
@@ -127,7 +128,8 @@ class PanDomainUserProviderTest extends AnyFreeSpec with Matchers with AttemptVa
           registered = false,
           displayName = None,
           invalidationTime = None,
-          totpSecret = None
+          totpSecret = None,
+          webAuthnUserHandle = None
         )
 
         val config = PandaAuthConfig("bob", "bob.key", "bobCookie", require2FA = true, "https://login.bob.example/login", AwsConnection("eu-west-1", None))
@@ -155,7 +157,8 @@ class PanDomainUserProviderTest extends AnyFreeSpec with Matchers with AttemptVa
           registered = false,
           displayName = None,
           invalidationTime = None,
-          totpSecret = None
+          totpSecret = None,
+          webAuthnUserHandle = None
         )
 
         val config = PandaAuthConfig("bob", "bob.key", "bobCookie", require2FA = true, "https://login.bob.example/login", AwsConnection("eu-west-1", None))
