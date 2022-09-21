@@ -73,8 +73,6 @@ PUT           /api/users/:username                                          cont
 POST          /api/users/:username/displayName                              controllers.api.Users.updateUserFullname(username: String)
 POST          /api/users/:username/password                                 controllers.api.Users.updateUserPassword(username: String)
 POST          /api/users/:username/permissions                              controllers.api.Users.setPermissions(username: String)
-POST          /api/users/:username/2fa                                      controllers.api.Users.enrollUser2FA(username: String)
-DELETE        /api/users/:username/2fa                                      controllers.api.Users.removeUser2FA(username: String)
 DELETE        /api/users/:username                                          controllers.api.Users.removeUser(username: String)
 
 + NOCSRF
@@ -85,8 +83,8 @@ GET           /api/currentUser/permissions                                  cont
 + NOCSRF
 POST          /api/auth/token                                               controllers.api.Authentication.token
 DELETE        /api/auth/token                                               controllers.api.Authentication.invalidateExistingTokens
-GET           /api/auth/generate2faToken/:username                          controllers.api.Authentication.generate2faToken(username: String)
 GET           /api/keepalive                                                controllers.api.Authentication.keepalive
+POST          /api/auth/generate2faParameters                               controllers.api.Authentication.generate2faParameters
 
 GET           /api/config                                                   controllers.frontend.App.configuration
 

@@ -1,13 +1,11 @@
 package utils.auth.providers
 
-import model.frontend.user.PartialUser
-import model.frontend.TotpActivation
+import model.frontend.user.{PartialUser, TfaRegistrationParameters}
 import play.api.libs.json._
 import play.api.mvc.{AnyContent, Request}
 import services.AuthProviderConfig
-import utils.attempt._
-import utils.auth.totp.TfaToken
 import utils.Epoch
+import utils.attempt._
 
 /**
   * A trait that authenticates a user
@@ -19,8 +17,8 @@ trait UserProvider {
   def clientConfig: Map[String, JsValue]
   /** authenticate a user based on the HTTP request and the current time (for any 2FA calculations) **/
   def authenticate(request: Request[AnyContent], time: Epoch): Attempt[PartialUser]
-  /** generate a brand new 2FA secret ready for a user to add to their device **/
-  def generate2faToken(username: String, instance: String): Attempt[TfaToken]
+  /** generate brand new 2FA secrets and challenges ready for a user to add their device **/
+  def generate2faParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters]
   /** create an all powerful initial user **/
   def genesisUser(request: JsValue, time: Epoch): Attempt[PartialUser]
   /** create a new user account */
@@ -31,8 +29,4 @@ trait UserProvider {
   def removeUser(username: String): Attempt[Unit]
   /** update the password of a user **/
   def updatePassword(username: String, newPassword: String): Attempt[Unit]
-  /** setup 2FA on an existing account that doesn't have it enabled **/
-  def enrollUser2FA(username: String, totpActivation: TotpActivation, time: Epoch): Attempt[Unit]
-  /** disable 2FA (if possible) **/
-  def removeUser2FA(username: String): Attempt[Unit]
 }

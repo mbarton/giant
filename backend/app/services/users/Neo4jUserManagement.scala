@@ -3,8 +3,8 @@ package services.users
 import commands.{CreateCollection, CreateIngestion}
 import model.CreateIngestionRequest
 import model.frontend.user.PartialUser
-import model.manifest.{Collection, Ingestion}
-import model.user.{BCryptPassword, DBUser, UserPermission, UserPermissions}
+import model.manifest.Collection
+import model.user._
 import org.neo4j.driver.v1.Values.parameters
 import org.neo4j.driver.v1.exceptions.ClientException
 import org.neo4j.driver.v1.{Driver, Record, StatementResult}
@@ -105,8 +105,7 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
          |   displayName: {displayName},
          |   password: {password},
          |   invalidationTime: {invalidationTime},
-         |   registered: {registered},
-         |   totpSecret: {totpSecret}
+         |   registered: {registered}
          | })
          |
          | ${permissionQuery(permissions)}
@@ -119,8 +118,7 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
         "password", user.password.map(_.hash).orNull,
         "invalidationTime", user.invalidationTime.map(_.asInstanceOf[java.lang.Long]).orNull,
         "registered", Boolean.box(user.registered),
-        "granted", permissions.granted.map(_.toString).toArray,
-        "totpSecret", user.totpSecret.map(_.toBase32).orNull
+        "granted", permissions.granted.map(_.toString).toArray
       )
     )
 
@@ -135,47 +133,15 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
     }
   }
 
-  override def importUser(user: DBUser, permissions: UserPermissions): Attempt[DBUser] = attemptTransaction { tx =>
-    val attemptedResult = tx.run(
-      s"""
-         |MERGE (user :User { username: {username} })
-         |
-         | SET user.displayName = {displayName}
-         | SET user.password = {password}
-         | SET user.invalidationTime = {invalidationTime}
-         | SET user.registered = {registered}
-         | SET user.totpSecret = {totpSecret}
-         |
-         | ${permissionQuery(permissions)}
-         |
-         |RETURN user
-      """.stripMargin,
-      parameters(
-        "username", user.username,
-        "displayName", user.displayName.orNull,
-        "password", user.password.map(_.hash).orNull,
-        "invalidationTime", user.invalidationTime.map(_.asInstanceOf[java.lang.Long]).orNull,
-        "registered", Boolean.box(user.registered),
-        "granted", permissions.granted.map(_.toString).toArray,
-        "totpSecret", user.totpSecret.map(_.toBase32).orNull
-      )
-    )
-
+  override def registerUser(username: String, displayName: String, password: Option[BCryptPassword]): Attempt[DBUser] = attemptTransaction { tx =>
     for {
-      result <- attemptedResult
-      user <- singleUser(user.username, result)
-    } yield user
-  }
-
-  override def registerUser(username: String, displayName: String, password: Option[BCryptPassword], secret: Option[Secret]): Attempt[DBUser] = for {
-    user <- updateUser(username, "displayName" -> displayName,
-      "totpSecret" -> secret.map(_.toBase32).orNull,
-      "password" -> password.map(_.hash).orNull,
-      "registered" -> true)
-
-    _ <- createDefaultUserResources(user.toPartial)
-  } yield {
-    user
+      user <- updateUser(username, "displayName" -> displayName,
+        "password" -> password.map(_.hash).orNull,
+        "registered" -> true)
+      _ <- createDefaultUserResources(user.toPartial)
+    } yield {
+      user
+    }
   }
 
   override def updateUserDisplayName(username: String, displayName: String): Attempt[DBUser] =
@@ -183,31 +149,6 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
 
   override def updateUserPassword(username: String, password: BCryptPassword): Attempt[DBUser] =
     updateUser(username, "password" -> password.hash)
-
-  override def updateTotpSecret(username: String, secret: Option[Secret]): Attempt[DBUser] =
-    updateUser(username, "totpSecret" -> secret.map(_.toBase32).orNull)
-
-  private def updateUser(username: String, fields: (String, Any)* ): Attempt[DBUser] = attemptTransaction { tx =>
-    val setStatements = fields.map { case (fieldName, value) =>
-      s"SET user.$fieldName = {$fieldName}"
-    }
-    val params: Seq[Any] =
-      Seq("username", username) ++ fields.flatMap { case (fieldName, value) => Seq(fieldName, value) }
-
-    val attemptedResult = tx.run(
-      s"""
-        |MATCH (user :User {username: {username}})
-        |${setStatements.mkString("\n")}
-        |RETURN user
-      """.stripMargin,
-      parameters(params.asInstanceOf[Seq[AnyRef]]: _*)
-    )
-
-    for {
-      result <- attemptedResult
-      user <- singleUser(username, result)
-    } yield user
-  }
 
   override def getUser(username: String): Attempt[DBUser] = attemptTransaction { tx =>
     val attemptedResult = tx.run(
@@ -357,6 +298,46 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
     }
   }
 
+  override def getUser2fa(username: String): Attempt[DBUser2fa] = attemptTransaction { tx =>
+    tx.run(
+      """
+        |MATCH (user: User { username: {username} })
+        |OPTIONAL MATCH (user)-[:HAS_2FA_CREDENTIAL]->(key :WebAuthnPublicKey)
+        |RETURN user, key""".stripMargin,
+      parameters("username", username)).flatMap { result =>
+        val rows = result.list().asScala
+
+        if(rows.isEmpty) {
+          Attempt.Left(UserDoesNotExistFailure(username))
+        } else {
+          val userNode = rows.head.get("user")
+          val keys = rows.map(_.get("key"))
+
+          Attempt.Right(DBUser2fa.fromNeo4jValue(userNode, keys.toList))
+        }
+    }
+  }
+
+  override def setUser2fa(user: String, tfa: DBUser2fa): Attempt[Unit] = attemptTransaction { tx =>
+    tx.run("""
+      MATCH(user: User {username: {username} })
+      SET user.totpSecret = {activeTotpSecret}
+      SET user.inactiveTotpSecret = {inactiveTotpSecret}
+      SET user.webAuthnUserHandle = {webAuthnUserHandle}
+      SET user.webAuthnChallenge = {webAuthnChallenge}
+      UNWIND {webAuthnPublicKeys} as webAuthnPublicKey
+        MERGE (user)-[:HAS_2FA_CREDENTIAL]->(key :WebAuthnPublicKey)
+        SET key.id = webAuthnPublicKey.id
+        SET key.publicKeyCose = webAuthnPublicKey.publicKeyCose
+    """, parameters(
+      "totpSecret", tfa.activeTotpSecret.map(_.toBase32).orNull,
+      "inactiveTotpSecret", tfa.inactiveTotpSecret.map(_.toBase32).orNull,
+      "webAuthnUserHandle", tfa.webAuthnUserHandle.map(v => Secret(v).toBase32).orNull,
+      "webAuthnChallenge", tfa.webAuthnChallenge.map(v => Secret(v).toBase32).orNull,
+      "webAuthnPublicKeys", tfa.webAuthnPublicKeys.map(k => Map("id" -> k.id, "publicKeyCose" -> k.publicKeyCose).asJava)
+    )).map(_ => ())
+  }
+
   private def singleUser(username: String, statementResult: StatementResult, field: String = "user"): Attempt[DBUser] = {
     statementResult.hasKeyOrFailure(field, UserDoesNotExistFailure(username)).map { result =>
       DBUser.fromNeo4jValue(result.get(field))
@@ -436,5 +417,27 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
     } yield {
       ()
     }
+  }
+
+  private def updateUser(username: String, fields: (String, Any)*): Attempt[DBUser] = attemptTransaction { tx =>
+    val setStatements = fields.map { case (fieldName, _) =>
+      s"SET user.$fieldName = {$fieldName}"
+    }
+    val params: Seq[Any] =
+      Seq("username", username) ++ fields.flatMap { case (fieldName, value) => Seq(fieldName, value) }
+
+    val attemptedResult = tx.run(
+      s"""
+         |MATCH (user :User {username: {username}})
+         |${setStatements.mkString("\n")}
+         |RETURN user
+      """.stripMargin,
+      parameters(params.asInstanceOf[Seq[AnyRef]]: _*)
+    )
+
+    for {
+      result <- attemptedResult
+      user <- singleUser(username, result)
+    } yield user
   }
 }

@@ -55,11 +55,11 @@ class Authentication(override val controllerComponents: AuthControllerComponents
     }
   }
 
-  def generate2faToken(username: String) = noAuth.ApiAction.attempt { request: Request[AnyContent] =>
-    userAuthenticator.generate2faToken(username, config.app.label.getOrElse(request.host))
-      .map { token =>
-        Ok(Json.obj("secret" -> token.secret, "url" -> token.url))
-      }
+  def generate2faParameters = noAuth.ApiAction.attempt { request: Request[AnyContent] =>
+    val time = Epoch.now
+    userAuthenticator.generate2faParameters(request, time, config.app.label.getOrElse(request.host)).map { params =>
+      Ok(Json.toJson(params))
+    }
   }
 
   def keepalive() = auth.ApiAction.attempt {

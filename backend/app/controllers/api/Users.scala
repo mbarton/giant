@@ -1,7 +1,6 @@
 package controllers.api
 
-import model.frontend.TotpActivation
-import model.frontend.user.PartialUser
+import model.frontend.user.{PartialUser, UserRegistration}
 import model.manifest.UserWithCollections
 import model.user.UserPermission.CanPerformAdminOperations
 import model.user.{UserPermission, UserPermissions}
@@ -10,7 +9,7 @@ import utils._
 import utils.attempt._
 import utils.auth.UserIdentityRequest
 import utils.auth.providers.UserProvider
-import utils.controller.{OptionalAuthApiController, AuthControllerComponents}
+import utils.controller.{AuthControllerComponents, OptionalAuthApiController}
 
 class Users(override val controllerComponents: AuthControllerComponents, userProvider: UserProvider)
   extends OptionalAuthApiController with Logging {
@@ -79,24 +78,6 @@ class Users(override val controllerComponents: AuthControllerComponents, userPro
         } else {
           controllerComponents.users.setPermissions(username, UserPermissions(granted))
         }
-      }
-    } yield NoContent
-  }
-
-  def enrollUser2FA(username: String) = auth.ApiAction.attempt(parse.json) { req: UserIdentityRequest[JsValue] =>
-    val time = Epoch.now
-    for {
-      totpActivation <- (req.body \ "totpActivation").validate[TotpActivation].toAttempt
-      _ <- auth.checkPermission(CanPerformAdminOperations, req) {
-        userProvider.enrollUser2FA(username, totpActivation, time)
-      }
-    } yield NoContent
-  }
-
-  def removeUser2FA(username: String) = auth.ApiAction.attempt { req: UserIdentityRequest[_] =>
-    for {
-      _ <- auth.checkPermission(CanPerformAdminOperations, req) {
-        userProvider.removeUser2FA(username)
       }
     } yield NoContent
   }

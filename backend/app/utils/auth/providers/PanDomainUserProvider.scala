@@ -1,18 +1,16 @@
 package utils.auth.providers
 
-import com.gu.pandomainauth.{PanDomain, PublicKey}
 import com.gu.pandomainauth.model._
-import model.frontend.user.PartialUser
-import model.frontend.TotpActivation
+import com.gu.pandomainauth.{PanDomain, PublicKey}
+import model.frontend.user.{PartialUser, TfaRegistrationParameters}
 import model.user.{DBUser, UserPermissions}
 import play.api.libs.json.{JsString, JsValue}
 import play.api.mvc.{AnyContent, Request}
 import services.users.UserManagement
 import services.{MetricsService, PandaAuthConfig}
-import utils.{Epoch, Logging}
-import utils.attempt._
 import utils.attempt.AttemptAwait._
-import utils.auth.totp.TfaToken
+import utils.attempt._
+import utils.{Epoch, Logging}
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
@@ -49,7 +47,7 @@ class PanDomainUserProvider(val config: PandaAuthConfig, currentPublicKey: () =>
               _ <- if (user.registered)
                 Attempt.Right(user)
               else {
-                users.registerUser(user.username, displayName, None, None)
+                users.registerUser(user.username, displayName, None)
               }
             } yield {
               metricsService.recordUsageEvent(user.username)
@@ -71,14 +69,14 @@ class PanDomainUserProvider(val config: PandaAuthConfig, currentPublicKey: () =>
   override def genesisUser(request: JsValue, time: Epoch): Attempt[PartialUser] = {
     for {
       email <- (request \ "username").validate[String].toAttempt
-      user = DBUser(email, None, None, None, registered = false, None, None)
+      user = DBUser(email, None, None, None, registered = false)
       createdUser <- users.createUser(user, UserPermissions.bigBoss)
     } yield createdUser.toPartial
   }
 
   /** create a new user account */
   override def createUser(username: String, request: JsValue): Attempt[PartialUser] = {
-    val user = DBUser(username, None, None, None, registered = false, None, None)
+    val user = DBUser(username, None, None, None, registered = false)
     for {
       // we mark this user as not registered so we can cache the display name when we see them
       createdUser <- users.createUser(user, UserPermissions.default)
@@ -92,10 +90,8 @@ class PanDomainUserProvider(val config: PandaAuthConfig, currentPublicKey: () =>
 
   /** None of these make sense for a pan domain authed user so we return a failure **/
   override def updatePassword(username: String, newPassword: String): Attempt[Unit] = unsupportedOperation
-  override def generate2faToken(username: String, instance: String): Attempt[TfaToken] = unsupportedOperation
-  override def registerUser(request: JsValue, time: Epoch): Attempt[Unit] = unsupportedOperation
-  override def enrollUser2FA(username: String, totpActivation: TotpActivation, time: Epoch): Attempt[Unit] = unsupportedOperation
-  override def removeUser2FA(username: String): Attempt[Unit] = unsupportedOperation
+  override def generate2faParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters] = unsupportedOperation
+  override def registerUser(userData: JsValue, time: Epoch): Attempt[Unit] = unsupportedOperation
 
   def unsupportedOperation[T] = Attempt.Left[T](UnsupportedOperationFailure("This authentication provider is federated and doesn't support this operation."))
 

@@ -38,7 +38,7 @@ import utils._
 import utils.attempt.AttemptAwait._
 import utils.auth.providers.{DatabaseUserProvider, PanDomainUserProvider}
 import utils.auth.totp.{SecureSecretGenerator, Totp}
-import utils.auth.{DefaultAuthActionBuilder, PasswordHashing, PasswordValidator}
+import utils.auth.{DefaultAuthActionBuilder, PasswordHashing, PasswordValidator, TwoFactorAuth}
 import utils.aws.S3Client
 import utils.controller.{AuthControllerComponents, CloudWatchReportingFailureToResultMapper}
 
@@ -102,7 +102,8 @@ class AppComponents(context: Context, config: Config)
         val totpService = Totp.googleAuthenticatorInstance()
         val passwordHashingService = new PasswordHashing()
         val passwordValidator = new PasswordValidator(config.minPasswordLength)
-        new DatabaseUserProvider(config, passwordHashingService, users, totpService, secureSecretGenerator, passwordValidator)
+        val twoFactorAuthService = new TwoFactorAuth(config.require2FA, totpService)
+        new DatabaseUserProvider(config, passwordHashingService, users, totpService, secureSecretGenerator, passwordValidator, twoFactorAuthService)
       case config: PandaAuthConfig =>
         val credentials = AwsCredentials(profile = config.aws.profile)
         val pandaS3Client = AwsS3Clients.pandaS3Client(credentials, config.aws.region)

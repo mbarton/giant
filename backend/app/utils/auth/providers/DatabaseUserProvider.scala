@@ -1,17 +1,16 @@
 package utils.auth.providers
 
-import commands.{RegisterUser, TFACommands}
-import model.frontend.user.{NewGenesisUser, PartialUser, UserRegistration}
-import model.frontend.TotpActivation
-import model.user.{DBUser, NewUser, UserPermissions}
+import commands.RegisterUser
+import model.frontend.user.{NewGenesisUser, PartialUser, TfaRegistrationParameters, TotpCodeChallengeResponse, UserRegistration}
+import model.user._
 import play.api.libs.json.{JsBoolean, JsNumber, JsValue}
 import play.api.mvc.{AnyContent, Request}
-import services.users.UserManagement
 import services.DatabaseAuthConfig
-import utils.attempt._
-import utils.auth.{PasswordHashing, PasswordValidator, RequireRegistered}
-import utils.auth.totp.{Algorithm, SecureSecretGenerator, TfaToken, Totp}
+import services.users.UserManagement
 import utils.Epoch
+import utils.attempt._
+import utils.auth.totp.{Algorithm, Secret, SecureSecretGenerator, Totp}
+import utils.auth.{PasswordHashing, PasswordValidator, RequireRegistered, TwoFactorAuth}
 
 import scala.concurrent.ExecutionContext
 
@@ -19,7 +18,7 @@ import scala.concurrent.ExecutionContext
   * A UserAuthenticator implementation that authenticates a valid user based on credentials stored in the local database
   */
 class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: PasswordHashing, users: UserManagement,
-                           totp: Totp, ssg: SecureSecretGenerator, passwordValidator: PasswordValidator)
+                           totp: Totp, ssg: SecureSecretGenerator, passwordValidator: PasswordValidator, tfa: TwoFactorAuth)
                           (implicit ec: ExecutionContext)
   extends UserProvider {
 
@@ -33,16 +32,47 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       formData <- request.body.asFormUrlEncoded.toAttempt(Attempt.Left(ClientFailure("No form data")))
       username <- formData.get("username").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No username form parameter")))
       password <-formData.get("password").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No password form parameter")))
-      tfaCode = formData.get("tfa").flatMap(_.headOption)
-      dbUser <- passwordHashing.verifyUser(users.getUser(username), password, RequireRegistered)
-      _ <- totp.checkUser2fa(config.require2FA, dbUser.totpSecret, tfaCode, time)
+      tfaCode = formData.get("tfa").flatMap(_.headOption).map(TotpCodeChallengeResponse)
+      dbUser <- passwordHashing.verifyUser(users.getUser(username), password, Some(RequireRegistered))
+      dbUserTfa <- users.getUser2fa(username)
+      _ <- tfa.check2fa(dbUserTfa, tfaCode, time)
     } yield dbUser.toPartial
   }
 
-  override def generate2faToken(username: String, instance: String): Attempt[TfaToken] = {
-    val secret = ssg.createRandomSecret(totp.algorithm).toBase32
-    val url = s"otpauth://totp/$username?secret=$secret&issuer=${config.totpIssuer}%20($instance)"
-    Attempt.Right(TfaToken(secret, url))
+  override def generate2faParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters] = {
+    // TODO MRB: this should require 2fa verification if you already have it set
+    for {
+      formData <- request.body.asFormUrlEncoded.toAttempt(Attempt.Left(ClientFailure("No form data")))
+      username <- formData.get("username").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No username form parameter")))
+      password <- formData.get("password").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No password form parameter")))
+      _ <- passwordHashing.verifyUser(users.getUser(username), password, registrationCheck = None)
+      existingTfa <- users.getUser2fa(username)
+
+      inactiveTotpSecret = existingTfa.inactiveTotpSecret.getOrElse(ssg.createRandomSecret(totp.algorithm))
+      // It is RECOMMENDED to let the user handle be 64 random bytes, and store this value in the user’s account
+      // https://www.w3.org/TR/webauthn-2/#sctn-user-handle-privacy
+      webAuthnUserHandle = existingTfa.webAuthnUserHandle.getOrElse(ssg.createRandomSecret(Algorithm.HmacSHA512).data)
+      // Challenges SHOULD therefore be at least 16 bytes long.
+      // https://www.w3.org/TR/webauthn-2/#sctn-cryptographic-challenges
+      webAuthnChallenge = existingTfa.webAuthnChallenge.getOrElse(ssg.createRandomSecret(Algorithm.HmacSHA256).data)
+
+      newTfa = existingTfa.copy(
+        inactiveTotpSecret = Some(inactiveTotpSecret),
+        webAuthnUserHandle = Some(webAuthnUserHandle),
+        webAuthnChallenge = Some(webAuthnChallenge)
+      )
+
+      _ <- users.setUser2fa(username, newTfa)
+    } yield {
+      val totpSecret = inactiveTotpSecret.toBase32
+
+      TfaRegistrationParameters(
+        totpSecret = totpSecret,
+        totpUrl = s"otpauth://totp/$username?secret=$totpSecret&issuer=${config.totpIssuer}%20($instance)",
+        webAuthnUserHandle = Secret(webAuthnUserHandle).toBase32,
+        webAuthnChallenge = Secret(webAuthnChallenge).toBase32
+      )
+    }
   }
 
   override def genesisUser(request: JsValue, time: Epoch): Attempt[PartialUser] = {
@@ -50,12 +80,10 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       userData <- request.validate[NewGenesisUser].toAttempt
       encryptedPassword <- passwordHashing.hash(userData.password)
       _ <- passwordValidator.validate(userData.password)
-      secret <- TFACommands.check2FA(config.require2FA, userData.totpActivation, totp, time)
       // We will immediately register after creating
-      user = DBUser(userData.username, None, None, invalidationTime = None, registered = false, totpSecret = None,
-        webAuthnUserHandle = Some(ssg.createRandomSecret(Algorithm.HmacSHA512)))
+      user = DBUser(userData.username, None, None, invalidationTime = None, registered = false)
       created <- users.createUser(user, UserPermissions.bigBoss)
-      registered <- users.registerUser(userData.username, userData.displayName, Some(encryptedPassword), secret)
+      registered <- users.registerUser(userData.username, userData.displayName, Some(encryptedPassword))
     } yield registered.toPartial
   }
 
@@ -66,17 +94,16 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       _ <- passwordValidator.validate(wholeUser.password)
       hash <- passwordHashing.hash(wholeUser.password)
       user <- users.createUser(
-          DBUser(wholeUser.username, Some("New User"), Some(hash),
-            invalidationTime = None, registered = false, totpSecret = None, Some(ssg.createRandomSecret(Algorithm.HmacSHA512))),
+          DBUser(wholeUser.username, Some("New User"), Some(hash), invalidationTime = None, registered = false),
         UserPermissions.default
-        )
+      )
     } yield user.toPartial
   }
 
   override def registerUser(request: JsValue, time: Epoch): Attempt[Unit] = {
     for {
       userData <- request.validate[UserRegistration].toAttempt
-      _ <- RegisterUser(users, passwordHashing, passwordValidator, userData, totp, time, config.require2FA).process()
+      _ <- RegisterUser(users, passwordHashing, passwordValidator, userData, ???, tfa, time).process()
     } yield ()
   }
 
@@ -89,24 +116,6 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       passwordHash <- passwordHashing.hash(newPassword)
       _ <- passwordValidator.validate(newPassword)
       _ <- users.updateUserPassword(username, passwordHash)
-    } yield ()
-  }
-
-  override def enrollUser2FA(username: String, totpActivation: TotpActivation, time: Epoch): Attempt[Unit] = {
-    for {
-      // this is deliberately hardcoded to true, we also pass through a Some, rather than None in this call.
-      secret <- TFACommands.check2FA(require2FA = true, Some(totpActivation), totp, time)
-      _ <- users.updateTotpSecret(username, secret)
-    } yield ()
-  }
-
-  override def removeUser2FA(username: String): Attempt[Unit] = {
-    for {
-      _ <- if (config.require2FA)
-             Attempt.Left(SecondFactorRequired("This system requires 2FA so you cannot disable it."))
-           else
-             Attempt.Right(())
-      _ <- users.updateTotpSecret(username, None)
     } yield ()
   }
 }

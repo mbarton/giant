@@ -57,16 +57,16 @@ class PasswordHashing(costFactor: Int = PasswordHashing.DEFAULT_COST_FACTOR) ext
     Unusually this takes maybeUser as an attempt - this is deliberate as is allows us to always hash the password supplied
     regardless of whether the user exists in the DB to prevent leaking of user existence.
    */
-  def verifyUser(maybeUser: Attempt[DBUser], password: String, registrationCheck: RegistrationCheck)(implicit ec: ExecutionContext): Attempt[DBUser] =
+  def verifyUser(maybeUser: Attempt[DBUser], password: String, registrationCheck: Option[RegistrationCheck])(implicit ec: ExecutionContext): Attempt[DBUser] =
     maybeUser.flatMap { user =>
       user.password match {
         case Some(userPassword) =>
           verify(userPassword, password).flatMap {
             case true =>
               (registrationCheck, user.registered) match {
-                case (RequireRegistered, false) =>
+                case (Some(RequireRegistered), false) =>
                   Attempt.Left[DBUser](LoginFailure("User requires registration"))
-                case (RequireNotRegistered, true) =>
+                case (Some(RequireNotRegistered), true) =>
                   Attempt.Left[DBUser](LoginFailure("User already registered"))
                 case _ =>
                   Attempt.Right(user)
