@@ -18,6 +18,8 @@ object PasswordHashing {
 sealed trait RegistrationCheck
 case object RequireRegistered extends RegistrationCheck
 case object RequireNotRegistered extends RegistrationCheck
+/** for adding 2fa credentials before registration is complete */
+case object AllowUnregistered extends RegistrationCheck
 
 class PasswordHashing(costFactor: Int = PasswordHashing.DEFAULT_COST_FACTOR) extends Logging {
   if (costFactor < PasswordHashing.DEFAULT_COST_FACTOR) {
@@ -57,16 +59,16 @@ class PasswordHashing(costFactor: Int = PasswordHashing.DEFAULT_COST_FACTOR) ext
     Unusually this takes maybeUser as an attempt - this is deliberate as is allows us to always hash the password supplied
     regardless of whether the user exists in the DB to prevent leaking of user existence.
    */
-  def verifyUser(maybeUser: Attempt[DBUser], password: String, registrationCheck: Option[RegistrationCheck])(implicit ec: ExecutionContext): Attempt[DBUser] =
+  def verifyUser(maybeUser: Attempt[DBUser], password: String, registrationCheck: RegistrationCheck)(implicit ec: ExecutionContext): Attempt[DBUser] =
     maybeUser.flatMap { user =>
       user.password match {
         case Some(userPassword) =>
           verify(userPassword, password).flatMap {
             case true =>
               (registrationCheck, user.registered) match {
-                case (Some(RequireRegistered), false) =>
+                case (RequireRegistered, false) =>
                   Attempt.Left[DBUser](LoginFailure("User requires registration"))
-                case (Some(RequireNotRegistered), true) =>
+                case (RequireNotRegistered, true) =>
                   Attempt.Left[DBUser](LoginFailure("User already registered"))
                 case _ =>
                   Attempt.Right(user)

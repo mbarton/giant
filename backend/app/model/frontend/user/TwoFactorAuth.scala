@@ -1,6 +1,6 @@
 package model.frontend.user
 
-import play.api.libs.json.{Json, Writes}
+import play.api.libs.json.{JsError, JsResult, JsValue, Json, Reads, Writes}
 
 /**
  * Sent to the client before registering a new 2fa method
@@ -31,6 +31,16 @@ case class WebAuthnClientData(id: String, challenge: String, origin: String) ext
 case class TfaUserConfiguration(totp: Boolean, webAuthnCredentialIds: List[String], webAuthnChallenge: String)
 
 sealed trait TfaChallengeResponse
+object TfaChallengeResponse {
+  implicit val reads: Reads[TfaChallengeResponse] = (json: JsValue) => {
+    (json \ "type").validate[String].flatMap {
+      case "totp" =>
+        (json \ "code").validate[String].map(TotpCodeChallengeResponse)
+
+      case other => JsError(s"Unknown TfaChallengeResponse type ${other}")
+    }
+  }
+}
 
 case class TotpCodeChallengeResponse(code: String) extends TfaChallengeResponse
 

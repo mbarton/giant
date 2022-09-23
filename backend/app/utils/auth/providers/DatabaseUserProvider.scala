@@ -1,7 +1,6 @@
 package utils.auth.providers
 
-import commands.RegisterUser
-import model.frontend.user.{NewGenesisUser, PartialUser, TfaRegistrationParameters, TotpCodeChallengeResponse, UserRegistration}
+import model.frontend.user._
 import model.user._
 import play.api.libs.json.{JsBoolean, JsNumber, JsValue}
 import play.api.mvc.{AnyContent, Request}
@@ -9,8 +8,9 @@ import services.DatabaseAuthConfig
 import services.users.UserManagement
 import utils.Epoch
 import utils.attempt._
-import utils.auth.totp.{Algorithm, Secret, SecureSecretGenerator, Totp}
-import utils.auth.{PasswordHashing, PasswordValidator, RequireRegistered, TwoFactorAuth}
+import utils.auth.totp.{SecureSecretGenerator, Totp}
+import utils.auth.webauthn.WebAuthn
+import utils.auth._
 
 import scala.concurrent.ExecutionContext
 
@@ -27,53 +27,8 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     "minPasswordLength" -> JsNumber(config.minPasswordLength)
   )
 
-  override def authenticate(request: Request[AnyContent], time: Epoch): Attempt[PartialUser] = {
-    for {
-      formData <- request.body.asFormUrlEncoded.toAttempt(Attempt.Left(ClientFailure("No form data")))
-      username <- formData.get("username").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No username form parameter")))
-      password <-formData.get("password").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No password form parameter")))
-      tfaCode = formData.get("tfa").flatMap(_.headOption).map(TotpCodeChallengeResponse)
-      dbUser <- passwordHashing.verifyUser(users.getUser(username), password, Some(RequireRegistered))
-      dbUserTfa <- users.getUser2fa(username)
-      _ <- tfa.check2fa(dbUserTfa, tfaCode, time)
-    } yield dbUser.toPartial
-  }
-
-  override def generate2faParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters] = {
-    // TODO MRB: this should require 2fa verification if you already have it set
-    for {
-      formData <- request.body.asFormUrlEncoded.toAttempt(Attempt.Left(ClientFailure("No form data")))
-      username <- formData.get("username").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No username form parameter")))
-      password <- formData.get("password").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No password form parameter")))
-      _ <- passwordHashing.verifyUser(users.getUser(username), password, registrationCheck = None)
-      existingTfa <- users.getUser2fa(username)
-
-      inactiveTotpSecret = existingTfa.inactiveTotpSecret.getOrElse(ssg.createRandomSecret(totp.algorithm))
-      // It is RECOMMENDED to let the user handle be 64 random bytes, and store this value in the user’s account
-      // https://www.w3.org/TR/webauthn-2/#sctn-user-handle-privacy
-      webAuthnUserHandle = existingTfa.webAuthnUserHandle.getOrElse(ssg.createRandomSecret(Algorithm.HmacSHA512).data)
-      // Challenges SHOULD therefore be at least 16 bytes long.
-      // https://www.w3.org/TR/webauthn-2/#sctn-cryptographic-challenges
-      webAuthnChallenge = existingTfa.webAuthnChallenge.getOrElse(ssg.createRandomSecret(Algorithm.HmacSHA256).data)
-
-      newTfa = existingTfa.copy(
-        inactiveTotpSecret = Some(inactiveTotpSecret),
-        webAuthnUserHandle = Some(webAuthnUserHandle),
-        webAuthnChallenge = Some(webAuthnChallenge)
-      )
-
-      _ <- users.setUser2fa(username, newTfa)
-    } yield {
-      val totpSecret = inactiveTotpSecret.toBase32
-
-      TfaRegistrationParameters(
-        totpSecret = totpSecret,
-        totpUrl = s"otpauth://totp/$username?secret=$totpSecret&issuer=${config.totpIssuer}%20($instance)",
-        webAuthnUserHandle = Secret(webAuthnUserHandle).toBase32,
-        webAuthnChallenge = Secret(webAuthnChallenge).toBase32
-      )
-    }
-  }
+  override def authenticate(request: Request[AnyContent], time: Epoch): Attempt[PartialUser] =
+    authenticateUser(request, time, RequireRegistered).map(_.toPartial)
 
   override def genesisUser(request: JsValue, time: Epoch): Attempt[PartialUser] = {
     for {
@@ -103,7 +58,11 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
   override def registerUser(request: JsValue, time: Epoch): Attempt[Unit] = {
     for {
       userData <- request.validate[UserRegistration].toAttempt
-      _ <- RegisterUser(users, passwordHashing, passwordValidator, userData, ???, tfa, time).process()
+      _ <- passwordHashing.verifyUser(users.getUser(userData.username), userData.previousPassword, RequireNotRegistered)
+      _ <- passwordValidator.validate(userData.newPassword)
+      newHash <- passwordHashing.hash(userData.newPassword)
+      _ <- verifySecondFactor(userData.username, userData.tfa, time, RequireNotRegistered)
+      _ <- users.registerUser(userData.username, userData.displayName, Some(newHash))
     } yield ()
   }
 
@@ -117,5 +76,92 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       _ <- passwordValidator.validate(newPassword)
       _ <- users.updateUserPassword(username, passwordHash)
     } yield ()
+  }
+
+  override def generate2faParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters] = for {
+    user <- authenticateUser(request, time, AllowUnregistered)
+    username = user.username
+
+    existingTfa <- users.getUser2fa(username)
+
+    inactiveTotpSecret = existingTfa.inactiveTotpSecret.getOrElse(ssg.createRandomSecret(totp.algorithm))
+    // It is RECOMMENDED to let the user handle be 64 random bytes, and store this value in the user’s account
+    // https://www.w3.org/TR/webauthn-2/#sctn-user-handle-privacy
+    webAuthnUserHandle = existingTfa.webAuthnUserHandle.getOrElse(WebAuthn.UserHandle.create(ssg))
+    // Challenges SHOULD therefore be at least 16 bytes long.
+    // https://www.w3.org/TR/webauthn-2/#sctn-cryptographic-challenges
+    webAuthnChallenge = existingTfa.webAuthnChallenge.getOrElse(WebAuthn.Challenge.create(ssg))
+
+    newTfa = existingTfa.copy(
+      inactiveTotpSecret = Some(inactiveTotpSecret),
+      webAuthnUserHandle = Some(webAuthnUserHandle),
+      webAuthnChallenge = Some(webAuthnChallenge)
+    )
+
+    _ <- users.setUser2fa(username, newTfa)
+  } yield {
+    val totpSecret = inactiveTotpSecret.toBase32
+
+    TfaRegistrationParameters(
+      totpSecret = totpSecret,
+      totpUrl = s"otpauth://totp/$username?secret=$totpSecret&issuer=${config.totpIssuer}%20($instance)",
+      webAuthnUserHandle = WebAuthn.toBase64(webAuthnUserHandle.data),
+      webAuthnChallenge = WebAuthn.toBase64(webAuthnChallenge.data),
+    )
+  }
+
+  override def get2faConfig(request: Request[AnyContent], time: Epoch): Attempt[TfaUserConfiguration] = for {
+    user <- authenticateUser(request, time, RequireRegistered)
+    username = user.username
+
+    user2fa <- users.getUser2fa(username)
+    user2faConfig <- buildAndSave2faConfiguration(username, user2fa)
+  } yield user2faConfig
+
+  private def authenticateUser(request: Request[AnyContent], time: Epoch, registrationCheck: RegistrationCheck): Attempt[DBUser] = {
+    for {
+      formData <- request.body.asFormUrlEncoded.toAttempt(Attempt.Left(ClientFailure("No form data")))
+      username <- formData.get("username").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No username form parameter")))
+      password <- formData.get("password").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No password form parameter")))
+      tfaChallengeResponse = formData.get("tfa").flatMap(_.headOption).map(TotpCodeChallengeResponse)
+      dbUser <- passwordHashing.verifyUser(users.getUser(username), password, registrationCheck)
+      _ <- verifySecondFactor(username, tfaChallengeResponse, time, registrationCheck)
+    } yield dbUser
+  }
+
+  private def verifySecondFactor(username: String, challengeResponse: Option[TfaChallengeResponse], time: Epoch, registrationCheck: RegistrationCheck): Attempt[Unit] = {
+    (registrationCheck, challengeResponse) match {
+      case (RequireRegistered, None) =>
+        Attempt.Left(SecondFactorRequired("2FA is required"))
+
+      case (RequireNotRegistered, None) if config.require2FA =>
+        Attempt.Left(SecondFactorRequired("2FA enrollment is required"))
+
+      case (RequireRegistered, Some(_)) if !config.require2FA =>
+        Attempt.Left(ClientFailure("2FA is not required"))
+
+      case (AllowUnregistered, None) if !config.require2FA =>
+        Attempt.Right(())
+
+      case (_, Some(challengeResponse)) =>
+        users.getUser2fa(username).flatMap(tfa.check2fa(_, challengeResponse, time))
+    }
+  }
+
+  private def buildAndSave2faConfiguration(username: String, existing2fa: DBUser2fa): Attempt[TfaUserConfiguration] = {
+    if(config.require2FA && existing2fa.activeTotpSecret.isEmpty) {
+      Attempt.Left(SecondFactorRequired("2FA enrollment is required"))
+    } else {
+      val challenge = WebAuthn.Challenge.create(ssg)
+      val new2fa = existing2fa.copy(webAuthnChallenge = Some(challenge))
+
+      users.setUser2fa(username, new2fa).map { _ =>
+        TfaUserConfiguration(
+          totp = config.require2FA,
+          webAuthnCredentialIds = new2fa.webAuthnPublicKeys.map { k => WebAuthn.toBase64(k.id) },
+          webAuthnChallenge = WebAuthn.toBase64(challenge.data)
+        )
+      }
+    }
   }
 }

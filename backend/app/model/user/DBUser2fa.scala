@@ -1,12 +1,9 @@
 package model.user
 
-import org.neo4j.driver.v1.Value
-import org.neo4j.driver.v1.types.Node
-import utils.attempt.{Attempt, Neo4JValueFailure}
-import utils.auth.totp._
 import model.RichValue
-
-import scala.collection.JavaConverters._
+import org.neo4j.driver.v1.Value
+import utils.auth.totp._
+import utils.auth.webauthn.WebAuthn
 
 case class WebAuthnPublicKey(id: Vector[Byte], publicKeyCose: Vector[Byte])
 
@@ -19,10 +16,10 @@ case class DBUser2fa(
   inactiveTotpSecret: Option[Secret],
   // the webauthn user handle stored on the client shouldn't include PII or usernames
   // https://www.w3.org/TR/webauthn-2/#sctn-user-handle-privacy
-  webAuthnUserHandle: Option[Vector[Byte]],
+  webAuthnUserHandle: Option[WebAuthn.UserHandle],
   webAuthnPublicKeys: List[WebAuthnPublicKey],
   // to support registering an additional public key
-  webAuthnChallenge: Option[Vector[Byte]]
+  webAuthnChallenge: Option[WebAuthn.Challenge]
 )
 
 object DBUser2fa {
@@ -33,23 +30,23 @@ object DBUser2fa {
     inactiveTotpSecret = Some(ssg.createRandomSecret(totp.algorithm)),
     // It is RECOMMENDED to let the user handle be 64 random bytes, and store this value in the user’s account
     // https://www.w3.org/TR/webauthn-2/#sctn-user-handle-privacy
-    webAuthnUserHandle = Some(ssg.createRandomSecret(Algorithm.HmacSHA512).data),
+    webAuthnUserHandle = Some(WebAuthn.UserHandle.create(ssg)),
     webAuthnPublicKeys = List.empty,
-    // Challenges SHOULD therefore be at least 16 bytes long.
-    // https://www.w3.org/TR/webauthn-2/#sctn-cryptographic-challenges
-    webAuthnChallenge = Some(ssg.createRandomSecret(Algorithm.HmacSHA256).data)
+    webAuthnChallenge = Some(WebAuthn.Challenge.create(ssg))
   )
 
   def fromNeo4jValue(user: Value, webAuthnPublicKeys: List[Value]): DBUser2fa = {
     DBUser2fa(
       activeTotpSecret = user.get("totpSecret").optionally(v => Base32Secret(v.asString)),
       inactiveTotpSecret = user.get("inactiveTotpSecret").optionally(v => Base32Secret(v.asString)),
-      // TODO MRB: not really a secret, I'm just re-using the base32 helpers out of laziness
-      webAuthnUserHandle = user.get("webAuthnUserHandle").optionally(v => Base32Secret(v.asString).data),
+      webAuthnUserHandle = user.get("webAuthnUserHandle").optionally(v => WebAuthn.UserHandle(WebAuthn.fromBase64(v.asString()))),
       webAuthnPublicKeys = webAuthnPublicKeys.flatMap(_.optionally(v =>
-        WebAuthnPublicKey(Base32Secret(v.get("id").asString).data, Base32Secret(v.get("publicKeyCose").asString).data)
+        WebAuthnPublicKey(
+          WebAuthn.fromBase64(v.get("id").asString()),
+          WebAuthn.fromBase64(v.get("publicKeyCose").asString())
+        )
       )),
-      webAuthnChallenge = user.get("webAuthnChallenge").optionally(v => Base32Secret(v.asString).data)
+      webAuthnChallenge = user.get("webAuthnChallenge").optionally(v => WebAuthn.Challenge(WebAuthn.fromBase64(v.asString()))),
     )
   }
 }

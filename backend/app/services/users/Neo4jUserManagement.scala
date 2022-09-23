@@ -15,6 +15,7 @@ import services.manifest.Manifest
 import utils._
 import utils.attempt.{Attempt, ClientFailure, Failure, IllegalStateFailure, Neo4JFailure, NotFoundFailure, UnknownFailure, UserDoesNotExistFailure}
 import utils.auth.totp.Secret
+import utils.auth.webauthn.WebAuthn
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
@@ -332,8 +333,8 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
     """, parameters(
       "totpSecret", tfa.activeTotpSecret.map(_.toBase32).orNull,
       "inactiveTotpSecret", tfa.inactiveTotpSecret.map(_.toBase32).orNull,
-      "webAuthnUserHandle", tfa.webAuthnUserHandle.map(v => Secret(v).toBase32).orNull,
-      "webAuthnChallenge", tfa.webAuthnChallenge.map(v => Secret(v).toBase32).orNull,
+      "webAuthnUserHandle", tfa.webAuthnUserHandle.map(v => WebAuthn.toBase64(v.data)).orNull,
+      "webAuthnChallenge", tfa.webAuthnChallenge.map(v => WebAuthn.toBase64(v.data)).orNull,
       "webAuthnPublicKeys", tfa.webAuthnPublicKeys.map(k => Map("id" -> k.id, "publicKeyCose" -> k.publicKeyCose).asJava)
     )).map(_ => ())
   }

@@ -1,6 +1,6 @@
 package utils.auth.providers
 
-import model.frontend.user.{PartialUser, TfaRegistrationParameters}
+import model.frontend.user.{PartialUser, TfaRegistrationParameters, TfaUserConfiguration}
 import play.api.libs.json._
 import play.api.mvc.{AnyContent, Request}
 import services.AuthProviderConfig
@@ -17,8 +17,6 @@ trait UserProvider {
   def clientConfig: Map[String, JsValue]
   /** authenticate a user based on the HTTP request and the current time (for any 2FA calculations) **/
   def authenticate(request: Request[AnyContent], time: Epoch): Attempt[PartialUser]
-  /** generate brand new 2FA secrets and challenges ready for a user to add their device **/
-  def generate2faParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters]
   /** create an all powerful initial user **/
   def genesisUser(request: JsValue, time: Epoch): Attempt[PartialUser]
   /** create a new user account */
@@ -29,4 +27,8 @@ trait UserProvider {
   def removeUser(username: String): Attempt[Unit]
   /** update the password of a user **/
   def updatePassword(username: String, newPassword: String): Attempt[Unit]
+  /** generate brand new 2FA secrets and challenges ready for a user to add their device * */
+  def generate2faParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters]
+  /** get any configuration required to support 2fa (eg webauthn credential ids and challenge) */
+  def get2faConfig(request: Request[AnyContent], time: Epoch): Attempt[TfaUserConfiguration]
 }
