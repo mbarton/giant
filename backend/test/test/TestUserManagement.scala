@@ -14,7 +14,7 @@ object TestUserManagement {
 
   def apply(initialUsers: List[user.DBUser]): TestUserManagement = {
     val withPermissions: TestUserManagement.Storage = initialUsers.map(user =>
-      user.username -> TestUserRegistration(user, UserPermissions.default, List.empty, DBUser2fa.empty)(scala.collection.breakOut)
+      user.username -> TestUserRegistration(user, UserPermissions.default, List.empty, DBUser2fa.empty))(scala.collection.breakOut)
 
     new TestUserManagement(withPermissions)
   }
@@ -42,7 +42,7 @@ class TestUserManagement(initialUsers: TestUserManagement.Storage) extends UserM
   }
 
   def listUsersWithPermission(permission: UserPermission): Attempt[List[DBUser]] = Attempt.Right {
-    users.values.collect { case TestUserRegistration(dbUser, permissions, _, _) if permissions.hasPermission(permission) => dbUser }
+    users.values.toList.collect { case TestUserRegistration(dbUser, permissions, _, _) if permissions.hasPermission(permission) => dbUser }
   }
 
   override def getPermissions(username: String): Attempt[UserPermissions] = {

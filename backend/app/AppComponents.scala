@@ -102,7 +102,7 @@ class AppComponents(context: Context, config: Config)
         val totpService = Totp.googleAuthenticatorInstance()
         val passwordHashingService = new PasswordHashing()
         val passwordValidator = new PasswordValidator(config.minPasswordLength)
-        val twoFactorAuthService = new TwoFactorAuth(totpService)
+        val twoFactorAuthService = new TwoFactorAuth(config.require2FA, totpService, users)
         new DatabaseUserProvider(config, passwordHashingService, users, totpService, secureSecretGenerator, passwordValidator, twoFactorAuthService)
       case config: PandaAuthConfig =>
         val credentials = AwsCredentials(profile = config.aws.profile)

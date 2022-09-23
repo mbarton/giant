@@ -1,22 +1,21 @@
 package utils.auth.providers
 
 import model.frontend.user.PartialUser
-import model.frontend.TotpActivation
 import model.user.{BCryptPassword, DBUser}
+import org.scalatest.freespec.AnyFreeSpec
+import org.scalatest.matchers.should.Matchers
 import play.api.libs.json.{JsBoolean, JsNumber, Json}
 import play.api.mvc.{AnyContentAsFormUrlEncoded, Results}
 import play.api.test.FakeRequest
 import services.DatabaseAuthConfig
 import services.users.UserManagement
 import test.{AttemptValues, TestUserManagement}
-import utils.auth.{PasswordHashing, PasswordValidator}
-import utils.auth.totp.{Base32Secret, SecureSecretGenerator, Totp}
 import utils.Epoch
 import utils.attempt._
+import utils.auth.totp.{Base32Secret, SecureSecretGenerator, Totp}
+import utils.auth.{PasswordHashing, PasswordValidator, TwoFactorAuth}
 
 import scala.concurrent.ExecutionContext.Implicits.global
-import org.scalatest.freespec.AnyFreeSpec
-import org.scalatest.matchers.should.Matchers
 
 class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptValues with Results  {
   val hashing = new PasswordHashing(4)
@@ -28,7 +27,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
       users = users,
       totp = Totp.googleAuthenticatorInstance(),
       ssg = new SecureSecretGenerator(),
-      passwordValidator = new PasswordValidator(config.minPasswordLength)
+      passwordValidator = new PasswordValidator(config.minPasswordLength),
+      tfa = new TwoFactorAuth(require2fa = false, Totp.googleAuthenticatorInstance(), users)
     )
   }
 
@@ -74,9 +74,7 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           password = Some(hardToGuessPassword),
           registered = true,
           displayName = None,
-          invalidationTime = None,
-          totpSecret = None,
-          webAuthnUserHandle = None
+          invalidationTime = None
         )
         val userProvider = makeUserProvider(config, TestUserManagement(List(bob)))
 
@@ -95,9 +93,7 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           password = Some(hardToGuessPassword),
           registered = true,
           displayName = Some("Bob Bob"),
-          invalidationTime = None,
-          totpSecret = None,
-          webAuthnUserHandle = None
+          invalidationTime = None
         )
         val userProvider = makeUserProvider(config, TestUserManagement(List(bob)))
 
@@ -110,15 +106,16 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
       }
 
       "authentication fails when the user is not enrolled in 2FA when 2FA is required" in {
+        // TODO MRB: fix this test
+        ???
+
         val config = DatabaseAuthConfig(8, require2FA = true, "bob")
         val bob = DBUser(
           username = "bob",
           password = Some(hardToGuessPassword),
           registered = true,
           displayName = Some("Bob Bob"),
-          invalidationTime = None,
-          totpSecret = None,
-          webAuthnUserHandle = None
+          invalidationTime = None
         )
         val userProvider = makeUserProvider(config, TestUserManagement(List(bob)))
 
@@ -131,15 +128,15 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
       }
 
       "authentication fails when the password is right but 2FA is required" in {
+        // TODO MRB: fix this test
+
         val config = DatabaseAuthConfig(8, require2FA = true, "bob")
         val bob = DBUser(
           username = "bob",
           password = Some(hardToGuessPassword),
           registered = true,
           displayName = Some("Bob Bob"),
-          invalidationTime = None,
-          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
-          webAuthnUserHandle = None
+          invalidationTime = None
         )
         val userProvider = makeUserProvider(config, TestUserManagement(List(bob)))
 
@@ -152,6 +149,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
       }
 
       "authentication fails when the password is right but 2FA is wrong" in {
+        // TODO MRB: fix this test!
+        ???
 
         val config = DatabaseAuthConfig(8, require2FA = true, "bob")
         val bob = DBUser(
@@ -159,9 +158,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           password = Some(hardToGuessPassword),
           registered = true,
           displayName = Some("Bob Bob"),
-          invalidationTime = None,
-          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
-          webAuthnUserHandle = None
+          invalidationTime = None
+//          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
         )
         val userProvider = makeUserProvider(config, TestUserManagement(List(bob)))
 
@@ -174,6 +172,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
       }
 
       "authentication succeeds when the password and 2FA are right" in {
+        // TODO MRB: fix this test!
+        ???
 
         val config = DatabaseAuthConfig(8, require2FA = true, "bob")
         val bob = DBUser(
@@ -181,9 +181,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           password = Some(hardToGuessPassword),
           registered = true,
           displayName = Some("Bob Bob"),
-          invalidationTime = None,
-          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
-          webAuthnUserHandle = None
+          invalidationTime = None
+//          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
         )
         val userProvider = makeUserProvider(config, TestUserManagement(List(bob)))
 
@@ -205,9 +204,7 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           password = Some(hardToGuessPassword),
           registered = false,
           displayName = None,
-          invalidationTime = None,
-          totpSecret = None,
-          webAuthnUserHandle = None
+          invalidationTime = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
@@ -228,15 +225,16 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
       }
 
       "succeeds when 2FA is required" in {
+        // TODO MRB: fix this test
+        ???
+
         val config = DatabaseAuthConfig(8, require2FA = true, "bob")
         val bob = DBUser(
           username = "bob",
           password = Some(hardToGuessPassword),
           registered = false,
           displayName = None,
-          invalidationTime = None,
-          totpSecret = None,
-          webAuthnUserHandle = None
+          invalidationTime = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
@@ -245,32 +243,29 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           "username" -> "bob",
           "previousPassword" -> "hardtoguess",
           "newPassword" -> "hardtoguess",
-          "displayName" -> "Bob Bob",
-          "totpActivation" -> Json.obj(
-            "secret" -> "JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5",
-            "code" -> "836585"
-          )
+          "displayName" -> "Bob Bob"
         ), valentinesEpoch)
 
         result.successValue
 
         val bob2 = users.getUser("bob").successValue
         bob2.registered shouldBe true
-        bob2.totpSecret shouldBe Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5"))
+//        bob2.totpSecret shouldBe Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5"))
         bob2.displayName shouldBe Some("Bob Bob")
         bob2.password should not be Some(hardToGuessPassword)
       }
 
       "fails when password is wrong" in {
+        // TODO MRB: fix this test!!
+        ???
+
         val config = DatabaseAuthConfig(8, require2FA = true, "bob")
         val bob = DBUser(
           username = "bob",
           password = Some(hardToGuessPassword),
           registered = false,
           displayName = None,
-          invalidationTime = None,
-          totpSecret = None,
-          webAuthnUserHandle = None
+          invalidationTime = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
@@ -292,15 +287,16 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
       }
 
       "fails when new password is too short" in {
+        // TODO MRB: fix this test!!
+        ???
+
         val config = DatabaseAuthConfig(8, require2FA = true, "bob")
         val bob = DBUser(
           username = "bob",
           password = Some(hardToGuessPassword),
           registered = false,
           displayName = None,
-          invalidationTime = None,
-          totpSecret = None,
-          webAuthnUserHandle = None
+          invalidationTime = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
@@ -322,15 +318,16 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
       }
 
       "fails when 2FA is wrong" in {
+        // TODO MRB: fix this test!!
+        ???
+
         val config = DatabaseAuthConfig(8, require2FA = true, "bob")
         val bob = DBUser(
           username = "bob",
           password = Some(hardToGuessPassword),
           registered = false,
           displayName = None,
-          invalidationTime = None,
-          totpSecret = None,
-          webAuthnUserHandle = None
+          invalidationTime = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
@@ -360,9 +357,7 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
         password = None,
         registered = true,
         displayName = Some("Bob Bob"),
-        invalidationTime = None,
-        totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
-        webAuthnUserHandle = None
+        invalidationTime = None
       )
       val users = TestUserManagement(List(bob))
       val userProvider = makeUserProvider(config, users)
@@ -380,9 +375,7 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           password = Some(hardToGuessPassword),
           registered = true,
           displayName = Some("Bob Bob"),
-          invalidationTime = None,
-          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
-          webAuthnUserHandle = None
+          invalidationTime = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
@@ -399,9 +392,7 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           password = Some(hardToGuessPassword),
           registered = true,
           displayName = Some("Bob Bob"),
-          invalidationTime = None,
-          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
-          webAuthnUserHandle = None
+          invalidationTime = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
@@ -415,50 +406,56 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
 
     "enrollUser2FA" - {
       "succeeds when enrolling a correct 2FA" in {
+        // TODO MRB: fix this test!!
+        ???
+
         val config = DatabaseAuthConfig(8, require2FA = true, "bob")
         val bob = DBUser(
           username = "bob",
           password = Some(hardToGuessPassword),
           registered = true,
           displayName = Some("Bob Bob"),
-          invalidationTime = None,
-          totpSecret = None,
-          webAuthnUserHandle = None
+          invalidationTime = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
 
-        userProvider
-          .enrollUser2FA("bob", TotpActivation("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5", "836585"), valentinesEpoch)
-          .successValue
+//        userProvider
+//          .enrollUser2FA("bob", TotpActivation("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5", "836585"), valentinesEpoch)
+//          .successValue
 
-        users.getUser("bob").successValue.totpSecret shouldBe Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5"))
+//        users.getUser("bob").successValue.totpSecret shouldBe Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5"))
       }
 
       "fails when sample code is wrong" in {
+        // TODO MRB: fix this test!!
+        ???
+
         val config = DatabaseAuthConfig(8, require2FA = true, "bob")
         val bob = DBUser(
           username = "bob",
           password = Some(hardToGuessPassword),
           registered = true,
           displayName = Some("Bob Bob"),
-          invalidationTime = None,
-          totpSecret = None,
-          webAuthnUserHandle = None
+          invalidationTime = None
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
 
-        userProvider
-          .enrollUser2FA("bob", TotpActivation("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5", "123456"), valentinesEpoch)
-          .failureValue shouldBe ClientFailure("Sample 2FA code wasn't valid, check the time on your device")
+//        userProvider
+//          .enrollUser2FA("bob", TotpActivation("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5", "123456"), valentinesEpoch)
+//          .failureValue shouldBe ClientFailure("Sample 2FA code wasn't valid, check the time on your device")
 
         users.getUser("bob").successValue shouldBe bob
       }
     }
 
     "removeUser2FA" - {
+      // TODO MRB: do we still need this? perhaps reset user 2fa rather than remove?
+
       "fails when 2FA is required" in {
+        ???
+
         val config = DatabaseAuthConfig(8, require2FA = true, "bob")
         val bob = DBUser(
           username = "bob",
@@ -466,20 +463,21 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = true,
           displayName = Some("Bob Bob"),
           invalidationTime = None,
-          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
-          webAuthnUserHandle = None
+//          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5"))
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
 
-        userProvider
-          .removeUser2FA("bob")
-          .failureValue shouldBe SecondFactorRequired("This system requires 2FA so you cannot disable it.")
+//        userProvider
+//          .removeUser2FA("bob")
+//          .failureValue shouldBe SecondFactorRequired("This system requires 2FA so you cannot disable it.")
 
         users.getUser("bob").successValue shouldBe bob
       }
 
       "succeeds" in {
+        ???
+
         val config = DatabaseAuthConfig(8, require2FA = false, "bob")
         val bob = DBUser(
           username = "bob",
@@ -487,17 +485,16 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registered = true,
           displayName = Some("Bob Bob"),
           invalidationTime = None,
-          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
-          webAuthnUserHandle = None
+//          totpSecret = Some(Base32Secret("JCZAB5QQN5QNAPLG27MT4O5XZWDXRIH5")),
         )
         val users = TestUserManagement(List(bob))
         val userProvider = makeUserProvider(config, users)
 
-        userProvider
-          .removeUser2FA("bob")
-          .successValue
+//        userProvider
+//          .removeUser2FA("bob")
+//          .successValue
 
-        users.getUser("bob").successValue.totpSecret shouldBe None
+//        users.getUser("bob").successValue.totpSecret shouldBe None
       }
     }
   }

@@ -90,7 +90,7 @@ class PanDomainUserProvider(val config: PandaAuthConfig, currentPublicKey: () =>
 
   /** None of these make sense for a pan domain authed user so we return a failure **/
   override def updatePassword(username: String, newPassword: String): Attempt[Unit] = unsupportedOperation
-  override def generate2faParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters] = unsupportedOperation
+  override def get2faRegistrationParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters] = unsupportedOperation
   override def get2faConfig(request: Request[AnyContent], time: Epoch): Attempt[TfaUserConfiguration] = unsupportedOperation
   override def register2faMethod(request: Request[AnyContent], time: Epoch, registration: TfaRegistration): Attempt[TfaUserConfiguration] = unsupportedOperation
   override def registerUser(userData: JsValue, time: Epoch): Attempt[Unit] = unsupportedOperation

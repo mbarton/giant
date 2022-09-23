@@ -28,7 +28,7 @@ trait UserProvider {
   /** update the password of a user **/
   def updatePassword(username: String, newPassword: String): Attempt[Unit]
   /** generate brand new 2FA secrets and challenges ready for a user to add their device * */
-  def generate2faParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters]
+  def get2faRegistrationParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters]
   /** get any configuration required to support 2fa (eg webauthn credential ids and challenge) */
   def get2faConfig(request: Request[AnyContent], time: Epoch): Attempt[TfaUserConfiguration]
   /** register a new 2fa method */

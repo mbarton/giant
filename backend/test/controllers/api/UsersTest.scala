@@ -1,28 +1,28 @@
 package controllers.api
 
+import akka.http.scaladsl.model.FormData
 import akka.stream.Materializer
 import akka.stream.testkit.NoMaterializer
-import model.frontend.TotpActivation
-import model.frontend.user.UserRegistration
+import model.frontend.user.{TotpCodeRegistration, UserRegistration}
 import model.manifest.Collection
 import model.user
 import model.user.{BCryptPassword, DBUser, NewUser, UserPermissions}
 import org.scalatest.concurrent.ScalaFutures
-import play.api.libs.json.{JsArray, JsObject, Json}
-import play.api.mvc.{Action, AnyContentAsEmpty, Request, Results}
-import play.api.test.Helpers._
-import play.api.test.{FakeRequest, Helpers}
-import services.DatabaseAuthConfig
-import services.users.UserManagement
-import test.{AttemptValues, TestAuthActionBuilder, TestUserManagement}
-import utils.attempt.{ClientFailure, SecondFactorRequired}
-import utils.auth
-import utils.auth.providers.DatabaseUserProvider
-import utils.auth.totp.{SecureSecretGenerator, Totp}
-import utils.auth.{PasswordHashing, PasswordValidator}
-import test.integration.Helpers.stubControllerComponentsAsUser
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.should.Matchers
+import play.api.libs.json.{JsArray, JsObject, Json}
+import play.api.mvc.{Action, AnyContentAsEmpty, Request, Results}
+import play.api.test.FakeRequest
+import play.api.test.Helpers._
+import services.DatabaseAuthConfig
+import services.users.UserManagement
+import test.integration.Helpers.stubControllerComponentsAsUser
+import test.{AttemptValues, TestUserManagement}
+import utils.attempt.{ClientFailure, SecondFactorRequired}
+import utils.auth.providers.DatabaseUserProvider
+import utils.auth.totp.{Base32Secret, SecureSecretGenerator, Totp}
+import utils.auth.webauthn.WebAuthn
+import utils.auth.{PasswordHashing, PasswordValidator, TwoFactorAuth}
 
 class UsersTest extends AnyFreeSpec with Matchers with Results with ScalaFutures with AttemptValues {
   import scala.concurrent.ExecutionContext.Implicits.global
@@ -30,10 +30,11 @@ class UsersTest extends AnyFreeSpec with Matchers with Results with ScalaFutures
 
   private val hashing = new PasswordHashing(7)
   private val validator = new PasswordValidator(12)
+  private val ssg = new SecureSecretGenerator()
   private val totp = Totp.googleAuthenticatorInstance()
 
-  val paul = user.DBUser("paul", Some("Paul Chuckle"), Some(BCryptPassword("invalid")), None, registered = true, None, None)
-  val barry = user.DBUser("barry", Some("Barry Chuckle"), Some(BCryptPassword("invalid")), None, registered = true, None, None)
+  val paul = user.DBUser("paul", Some("Paul Chuckle"), Some(BCryptPassword("invalid")), None, registered = true)
+  val barry = user.DBUser("barry", Some("Barry Chuckle"), Some(BCryptPassword("invalid")), None, registered = true)
   val users: Map[DBUser, (UserPermissions, List[Collection])] = Map(paul -> (UserPermissions.default, List.empty), barry -> (UserPermissions.default, List.empty))
 
   "UsersController" - {
@@ -113,14 +114,16 @@ class UsersTest extends AnyFreeSpec with Matchers with Results with ScalaFutures
       import test.fixtures.GoogleAuthenticator._
       val originalPasswordText = "bob"
       val originalPassword = BCryptPassword("$2y$14$QfKVhpRMSe1VXi.ghHLJguCY6CmSA.ipNrg8JJZok5xhUxM5wDIem")
-      val bob = DBUser("bob", Some("Spongebob"), Some(originalPassword), None, registered = false, None, None)
+      val bob = DBUser("bob", Some("Spongebob"), Some(originalPassword), None, registered = false)
 
       "with require2FA set to false" - {
         "password and registered flag should be updated" in {
           val users = TestUserManagement(List(bob))
-          val result = RegisterUser(users, hashing, validator,
-            UserRegistration("bob", originalPasswordText, "Spongebob", "longPassword", None),
-            totp, sampleEpoch, require2FA = false).process()
+          val tfa = new TwoFactorAuth(require2fa = false, totp, users)
+          val userProvider = new DatabaseUserProvider(null, hashing, users, totp, ssg, validator, tfa)
+
+          val registration = UserRegistration("bob", originalPasswordText, "Spongebob", "longPassword", None)
+          val result = userProvider.registerUser(Json.toJson(registration), sampleEpoch)
 
           result.successValue shouldBe (())
           val newBob = users.getAllUsers.find(_.username == "bob").get
@@ -130,24 +133,49 @@ class UsersTest extends AnyFreeSpec with Matchers with Results with ScalaFutures
 
         "2FA can be successfully enabled and secret set" in {
           val users = TestUserManagement(List(bob))
-          val result = RegisterUser(
-            users, hashing, validator,
-            UserRegistration("bob", originalPasswordText, "Spongebob", "longpassword", Some(TotpActivation(sampleSecret.toBase32, sampleAnswers.head))),
-            totp, sampleEpoch, require2FA = false
-          ).process()
+          val tfa = new TwoFactorAuth(require2fa = true, totp, users)
+          val userProvider = new DatabaseUserProvider(null, hashing, users, totp, ssg, validator, tfa)
 
-          result.successValue shouldBe (())
-          val newBob = users.getAllUsers.find(_.username == "bob").get
-          newBob.totpSecret shouldBe Some(sampleSecret)
+          val requestWithAuthData = FakeRequest().withFormUrlEncodedBody(
+            "username" -> bob.username,
+            "password" -> "bob",
+            "tfa" -> sampleAnswers.head
+          )
+
+          val tfaRegistrationParams = userProvider.get2faRegistrationParameters(requestWithAuthData, sampleEpoch, "giant").successValue
+          val placeholderTfaData = users.getUser2fa(bob.username).successValue
+
+          placeholderTfaData.activeTotpSecret shouldBe empty
+          placeholderTfaData.inactiveTotpSecret should contain(Base32Secret(tfaRegistrationParams.totpSecret))
+          placeholderTfaData.webAuthnPublicKeys shouldBe empty
+          placeholderTfaData.webAuthnUserHandle should not be empty
+          placeholderTfaData.webAuthnChallenge should not be empty
+
+          val tfaConfiguration = userProvider.register2faMethod(requestWithAuthData, sampleEpoch, TotpCodeRegistration(sampleAnswers.head)).successValue
+          tfaConfiguration.totp should be(true)
+          tfaConfiguration.webAuthnChallenge should be(WebAuthn.toBase64(placeholderTfaData.webAuthnChallenge.get.data))
+
+          val storedTfaData = users.getUser2fa(bob.username).successValue
+          storedTfaData.activeTotpSecret should contain(Base32Secret(tfaRegistrationParams.totpSecret))
+          storedTfaData.inactiveTotpSecret should not be empty
+          storedTfaData.webAuthnPublicKeys shouldBe empty
+          storedTfaData.webAuthnUserHandle should be(placeholderTfaData.webAuthnUserHandle)
+          storedTfaData.webAuthnChallenge should be(placeholderTfaData.webAuthnChallenge)
         }
 
         "fails if the 2FA code isn't valid" in {
           val users = TestUserManagement(List(bob))
-          val result = RegisterUser(
-            users, hashing, validator,
-            UserRegistration("bob", originalPasswordText, "Spongebob", "longpassword", Some(TotpActivation(sampleSecret.toBase32, "000000"))),
-            totp, sampleEpoch, require2FA = false
-          ).process()
+          val tfa = new TwoFactorAuth(require2fa = true, totp, users)
+          val userProvider = new DatabaseUserProvider(null, hashing, users, totp, ssg, validator, tfa)
+
+          val requestWithAuthData = FakeRequest().withFormUrlEncodedBody(
+            "username" -> bob.username,
+            "password" -> "bob",
+            "tfa" -> sampleAnswers.head
+          )
+
+          userProvider.get2faRegistrationParameters(requestWithAuthData, sampleEpoch, "giant").successValue
+          val result = userProvider.register2faMethod(requestWithAuthData, sampleEpoch, TotpCodeRegistration(sampleAnswers.head))
 
           result.failureValue shouldBe ClientFailure("Sample 2FA code wasn't valid, check the time on your device")
         }
@@ -156,11 +184,11 @@ class UsersTest extends AnyFreeSpec with Matchers with Results with ScalaFutures
       "with require2FA set to true" - {
         "fails with a lack of 2FA information" in {
           val users = TestUserManagement(List(bob))
-          val result = RegisterUser(
-            users, hashing, validator,
-            UserRegistration("bob", originalPasswordText, "Spongebob", "longpassword", None),
-            totp, sampleEpoch, require2FA = true
-          ).process()
+          val tfa = new TwoFactorAuth(require2fa = true, totp, users)
+          val userProvider = new DatabaseUserProvider(null, hashing, users, totp, ssg, validator, tfa)
+
+          val registration = UserRegistration("bob", originalPasswordText, "Spongebob", "longPassword", None)
+          val result = userProvider.registerUser(Json.toJson(registration)(Json.writes), sampleEpoch)
 
           result.failureValue shouldBe SecondFactorRequired("2FA enrollment is required")
         }
@@ -179,7 +207,8 @@ class UsersTest extends AnyFreeSpec with Matchers with Results with ScalaFutures
       val userManagement = TestUserManagement(initialUsers)
 
       val controllerComponents = stubControllerComponentsAsUser(reqUser.username, userManagement)
-      val userProvider = new DatabaseUserProvider(dbAuthConfig, hashing, userManagement, Totp.googleAuthenticatorInstance(), generator, validator)
+      val tfa = new TwoFactorAuth(require2fa = false, totp, userManagement)
+      val userProvider = new DatabaseUserProvider(dbAuthConfig, hashing, userManagement, Totp.googleAuthenticatorInstance(), generator, validator, tfa)
       val controller = new Users(controllerComponents, userProvider)
 
       fn(controller, userManagement)

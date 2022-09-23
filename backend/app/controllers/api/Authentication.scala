@@ -57,7 +57,7 @@ class Authentication(override val controllerComponents: AuthControllerComponents
 
   def generate2faParameters = noAuth.ApiAction.attempt { request: Request[AnyContent] =>
     val time = Epoch.now
-    userAuthenticator.generate2faParameters(request, time, config.app.label.getOrElse(request.host)).map { params =>
+    userAuthenticator.get2faRegistrationParameters(request, time, config.app.label.getOrElse(request.host)).map { params =>
       Ok(Json.toJson(params))
     }
   }

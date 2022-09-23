@@ -12,7 +12,7 @@ import services.users.UserManagement
 import test.{AttemptValues, TestUserManagement}
 import utils.Logging
 import utils.auth.totp.{SecureSecretGenerator, Totp}
-import utils.auth.{PasswordHashing, PasswordValidator}
+import utils.auth.{PasswordHashing, PasswordValidator, TwoFactorAuth}
 import utils.auth.providers.DatabaseUserProvider
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.should.Matchers
@@ -30,7 +30,7 @@ class GenesisTest extends AnyFreeSpec with Matchers with Results with AttemptVal
   implicit override val patienceConfig = PatienceConfig(scaled(Span(2, Seconds)), scaled(Span(15, Millis)))
 
   def provider(userManagement: UserManagement) =
-    new DatabaseUserProvider(config, hashing, userManagement, totp, generator, validator)
+    new DatabaseUserProvider(config, hashing, userManagement, totp, generator, validator, new TwoFactorAuth(require2fa = false, totp, userManagement))
 
   "Genesis controller" - {
     "with an empty database" - {
@@ -48,7 +48,7 @@ class GenesisTest extends AnyFreeSpec with Matchers with Results with AttemptVal
 
       "executing the doSetup action" - {
         "should enforce the minimum password length" in {
-          val body: JsValue = Json.toJson(NewGenesisUser("bob", "Spongebob", "password", None))
+          val body: JsValue = Json.toJson(NewGenesisUser("bob", "Spongebob", "password"))
           val result = controllerWithNoUsers.doSetup().apply(FakeRequest().withBody(body))
           val string = contentAsString(result)
           string shouldBe "Provided password too short, must be at least 12 characters"
@@ -57,7 +57,7 @@ class GenesisTest extends AnyFreeSpec with Matchers with Results with AttemptVal
         }
 
         "should create a user" in {
-          val body: JsValue = Json.toJson(NewGenesisUser("bob", "Spongebob", "bobs-password", None))
+          val body: JsValue = Json.toJson(NewGenesisUser("bob", "Spongebob", "bobs-password"))
           val result = controllerWithNoUsers.doSetup().apply(FakeRequest().withBody(body))
           val json = contentAsJson(result)
           json.as[PartialUser] shouldBe PartialUser("bob", "Spongebob")
@@ -92,7 +92,7 @@ class GenesisTest extends AnyFreeSpec with Matchers with Results with AttemptVal
       "executing the checkSetup action again" - {
         "should return setupCompleted: true when another node has inserted a user" in {
           userManagement.createUser(
-            DBUser("bob", Some("bob"), Some(BCryptPassword("bad-hash")), None, registered = false, None, None), UserPermissions(Set.empty)
+            DBUser("bob", Some("bob"), Some(BCryptPassword("bad-hash")), None, registered = false), UserPermissions(Set.empty)
           )
           val result = controllerWithNoUsers.checkSetup.apply(FakeRequest())
           val json = contentAsJson(result)
@@ -102,7 +102,7 @@ class GenesisTest extends AnyFreeSpec with Matchers with Results with AttemptVal
     }
 
     "with a user in the database" - {
-      val management = TestUserManagement(List(DBUser("bob", Some("bob"), Some(BCryptPassword("bad-hash")), None, registered = false, None, None)))
+      val management = TestUserManagement(List(DBUser("bob", Some("bob"), Some(BCryptPassword("bad-hash")), None, registered = false)))
       val controllerWithAUser = new Genesis(controllerComponents, provider(management), management, true)
 
       "executing the checkSetup action" - {

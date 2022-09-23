@@ -61,7 +61,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       _ <- passwordHashing.verifyUser(users.getUser(userData.username), userData.previousPassword, RequireNotRegistered)
       _ <- passwordValidator.validate(userData.newPassword)
       newHash <- passwordHashing.hash(userData.newPassword)
-      _ <- verifySecondFactor(userData.username, userData.tfa, time, RequireNotRegistered)
+      _ <- tfa.check2fa(userData.username, userData.tfa, time, RequireNotRegistered)
       _ <- users.registerUser(userData.username, userData.displayName, Some(newHash))
     } yield ()
   }
@@ -78,7 +78,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     } yield ()
   }
 
-  override def generate2faParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters] = for {
+  override def get2faRegistrationParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters] = for {
     user <- authenticateUser(request, time, AllowUnregistered)
     username = user.username
 
@@ -135,29 +135,8 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       password <- formData.get("password").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No password form parameter")))
       tfaChallengeResponse = formData.get("tfa").flatMap(_.headOption).map(TotpCodeChallengeResponse)
       dbUser <- passwordHashing.verifyUser(users.getUser(username), password, registrationCheck)
-      _ <- verifySecondFactor(username, tfaChallengeResponse, time, registrationCheck)
+      _ <- tfa.check2fa(username, tfaChallengeResponse, time, registrationCheck)
     } yield dbUser
-  }
-
-  // TODO MRB: check the logic is right here. Should reject an registered user without 2fa if 2fa is enabled and
-  // only allow an unregistered user if they present 2fa
-  private def verifySecondFactor(username: String, challengeResponse: Option[TfaChallengeResponse], time: Epoch, registrationCheck: RegistrationCheck): Attempt[Unit] = {
-    (registrationCheck, challengeResponse) match {
-      case (RequireRegistered, None) =>
-        Attempt.Left(MisconfiguredAccount("2FA is required"))
-
-      case (RequireNotRegistered, None) if config.require2FA =>
-        Attempt.Left(SecondFactorRequired("2FA enrollment is required"))
-
-      case (RequireRegistered, Some(_)) if !config.require2FA =>
-        Attempt.Left(ClientFailure("2FA is not required"))
-
-      case (AllowUnregistered, None) if !config.require2FA =>
-        Attempt.Right(())
-
-      case (_, Some(challengeResponse)) =>
-        users.getUser2fa(username).flatMap(tfa.check2fa(_, challengeResponse, time))
-    }
   }
 
   private def buildAndSave2faConfiguration(username: String, existing2fa: DBUser2fa): Attempt[TfaUserConfiguration] = {

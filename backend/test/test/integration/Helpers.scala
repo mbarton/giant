@@ -244,7 +244,7 @@ object Helpers extends Matchers with Logging with OptionValues with Inside {
     val userManagement = Neo4jUserManagement(neo4jDriver, ec, queryLoggingConfig, manifest, elasticsearch.elasticResources, elasticsearch.elasticPages, annotations)
 
     usernames.map { username =>
-      val user = DBUser(username, Some(username), Some(BCryptPassword("invalid")), None, registered = true, None, None)
+      val user = DBUser(username, Some(username), Some(BCryptPassword("invalid")), None, registered = true)
       val permissions = if(admins.contains(username)) { UserPermissions.bigBoss } else { UserPermissions.default }
       userManagement.createUser(user, permissions).await()
 

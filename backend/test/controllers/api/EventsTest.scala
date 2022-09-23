@@ -23,8 +23,8 @@ class EventsTest extends AnyFunSuite with Matchers {
   implicit val mat: Materializer = NoMaterializer
   implicit val timeout: Timeout = Timeout(10, TimeUnit.SECONDS)
 
-  val punter = DBUser("punter", None, None, None, true, None, None)
-  val admin = DBUser("admin", None, None, None, true, None, None)
+  val punter = DBUser("punter", None, None, None, true)
+  val admin = DBUser("admin", None, None, None, true)
 
   val collectionOne = Collection(Uri("one"), "one", List.empty, None)
   val collectionTwo = Collection(Uri("two"), "two", List.empty, None)
