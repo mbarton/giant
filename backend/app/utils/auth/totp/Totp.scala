@@ -47,23 +47,9 @@ object Totp {
   *                             clock drift.
   */
 class Totp(val codeLength: Int, val algorithm: Algorithm, windowErrorTolerance: Int) {
-
-  /**
-    * Check 2fa for a provided user. This returns a Right if authentication is valid or Left if not.
-    */
-  def checkUser2fa(require2FA: Boolean, totpSecret: Option[Secret], maybeCode: Option[String], time: Epoch)
-                  (implicit ec: ExecutionContext): Attempt[Boolean] = {
-    (require2FA, totpSecret, maybeCode) match {
-      case (true, None, _)               => Attempt.Left(MisconfiguredAccount("2FA is required but user is not enrolled"))
-      case (_, Some(_), None)            => Attempt.Left(SecondFactorRequired("2FA code required"))
-      case (false, None, _)              => Attempt.Right(false)
-      case (_, Some(secret), Some(code)) => checkCodeFatal(secret, code, time, SecondFactorRequired("2FA code not valid"))
-    }
-  }
-
-  def checkCodeFatal(secret: Secret, code: String, time: Epoch, failure: Failure)(implicit ec: ExecutionContext): Attempt[Boolean] = {
+  def checkCodeFatal(secret: Secret, code: String, time: Epoch, failure: Failure = ClientFailure("2FA code wasn't valid, check the time on your device"))(implicit ec: ExecutionContext): Attempt[Unit] = {
     checkCode(secret, code, time).flatMap { isValid =>
-      if (isValid) Attempt.Right(isValid) else Attempt.Left(failure)
+      if (isValid) Attempt.Right(()) else Attempt.Left(failure)
     }
   }
 

@@ -14,7 +14,7 @@ class TwoFactorAuth(totp: Totp) {
       Attempt.Left(SecondFactorRequired("2FA enrollment is required"))
 
     case TotpCodeChallengeResponse(code) =>
-      totp.checkCodeFatal(userTfa.activeTotpSecret.get, code, time, ClientFailure("2FA code wasn't valid, check the time on your device")).map(_ => ())
+      totp.checkCodeFatal(userTfa.activeTotpSecret.get, code, time).map(_ => ())
 
     case WebAuthnChallengeResponse() =>
       ???

@@ -2,7 +2,7 @@ package utils.auth.providers
 
 import com.gu.pandomainauth.model._
 import com.gu.pandomainauth.{PanDomain, PublicKey}
-import model.frontend.user.{PartialUser, TfaRegistrationParameters, TfaUserConfiguration}
+import model.frontend.user.{PartialUser, TfaRegistration, TfaRegistrationParameters, TfaUserConfiguration}
 import model.user.{DBUser, UserPermissions}
 import play.api.libs.json.{JsString, JsValue}
 import play.api.mvc.{AnyContent, Request}
@@ -92,6 +92,7 @@ class PanDomainUserProvider(val config: PandaAuthConfig, currentPublicKey: () =>
   override def updatePassword(username: String, newPassword: String): Attempt[Unit] = unsupportedOperation
   override def generate2faParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters] = unsupportedOperation
   override def get2faConfig(request: Request[AnyContent], time: Epoch): Attempt[TfaUserConfiguration] = unsupportedOperation
+  override def register2faMethod(request: Request[AnyContent], time: Epoch, registration: TfaRegistration): Attempt[TfaUserConfiguration] = unsupportedOperation
   override def registerUser(userData: JsValue, time: Epoch): Attempt[Unit] = unsupportedOperation
 
   def unsupportedOperation[T] = Attempt.Left[T](UnsupportedOperationFailure("This authentication provider is federated and doesn't support this operation."))

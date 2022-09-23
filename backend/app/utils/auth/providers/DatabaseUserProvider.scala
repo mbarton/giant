@@ -118,6 +118,16 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     user2faConfig <- buildAndSave2faConfiguration(username, user2fa)
   } yield user2faConfig
 
+  override def register2faMethod(request: Request[AnyContent], time: Epoch, registration: TfaRegistration): Attempt[TfaUserConfiguration] = for {
+    user <- authenticateUser(request, time, AllowUnregistered)
+    username = user.username
+
+    before <- users.getUser2fa(username)
+    after <- validateRegister2faMethod(before, registration, time)
+
+    user2faConfig <- buildAndSave2faConfiguration(username, after)
+  } yield user2faConfig
+
   private def authenticateUser(request: Request[AnyContent], time: Epoch, registrationCheck: RegistrationCheck): Attempt[DBUser] = {
     for {
       formData <- request.body.asFormUrlEncoded.toAttempt(Attempt.Left(ClientFailure("No form data")))
@@ -129,10 +139,12 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     } yield dbUser
   }
 
+  // TODO MRB: check the logic is right here. Should reject an registered user without 2fa if 2fa is enabled and
+  // only allow an unregistered user if they present 2fa
   private def verifySecondFactor(username: String, challengeResponse: Option[TfaChallengeResponse], time: Epoch, registrationCheck: RegistrationCheck): Attempt[Unit] = {
     (registrationCheck, challengeResponse) match {
       case (RequireRegistered, None) =>
-        Attempt.Left(SecondFactorRequired("2FA is required"))
+        Attempt.Left(MisconfiguredAccount("2FA is required"))
 
       case (RequireNotRegistered, None) if config.require2FA =>
         Attempt.Left(SecondFactorRequired("2FA enrollment is required"))
@@ -162,6 +174,24 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
           webAuthnChallenge = WebAuthn.toBase64(challenge.data)
         )
       }
+    }
+  }
+
+  private def validateRegister2faMethod(before: DBUser2fa, registration: TfaRegistration, time: Epoch): Attempt[DBUser2fa] = {
+    registration match {
+      case TotpCodeRegistration(code) =>
+        for {
+          secret <- Attempt.fromOption(before.inactiveTotpSecret, Attempt.Left(UnknownFailure(new IllegalStateException("Missing inactiveTotpSecret"))))
+          _ <- totp.checkCodeFatal(secret, code, time)
+        } yield {
+          before.copy(
+            activeTotpSecret = Some(secret),
+            inactiveTotpSecret = Some(ssg.createRandomSecret(totp.algorithm))
+          )
+        }
+
+      case _ =>
+        ???
     }
   }
 }
