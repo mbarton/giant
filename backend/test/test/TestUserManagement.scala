@@ -23,8 +23,8 @@ object TestUserManagement {
 
   type Storage = Map[String, TestUserRegistration]
 
-  val defaultPassword = "hardtoguess"
-  val defaultPasswordHashed = BCryptPassword("$2y$04$vZVs5a9NfK6GbyTuF6t22eNTmHcuzTMZftfLxiimNkkoO.spBvIZ6")
+  val testPassword = "hardtoguess"
+  val testPasswordHashed = BCryptPassword("$2y$04$vZVs5a9NfK6GbyTuF6t22eNTmHcuzTMZftfLxiimNkkoO.spBvIZ6")
 
   val ssg = new SecureSecretGenerator
   val totp = Totp.googleAuthenticatorInstance()
@@ -61,7 +61,7 @@ object TestUserManagement {
     dbUser = DBUser(
       username,
       displayName = displayName,
-      password = Some(defaultPasswordHashed),
+      password = Some(testPasswordHashed),
       invalidationTime = None,
       registered = true
     ),
