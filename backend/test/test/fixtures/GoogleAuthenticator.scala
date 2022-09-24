@@ -11,4 +11,5 @@ object GoogleAuthenticator {
   val sampleTime = LocalDateTime.of(2017, 12, 5, 11, 5, 0)
   val sampleEpoch = Epoch(sampleTime.toEpochSecond(ZoneOffset.UTC))
   val sampleAnswers = List("703365", "849621", "180272", "254200", "247225")
+  val sampleAnswer = sampleAnswers.head
 }

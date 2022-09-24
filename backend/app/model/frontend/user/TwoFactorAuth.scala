@@ -28,7 +28,7 @@ case class WebAuthnClientData(id: String, challenge: String, origin: String) ext
 /**
  * What 2fa methods can be used. Sent to the client before performing 2fa
  */
-case class TfaUserConfiguration(totp: Boolean, webAuthnCredentialIds: List[String], webAuthnChallenge: String)
+case class TfaChallengeParameters(totp: Boolean, webAuthnCredentialIds: List[String], webAuthnChallenge: String)
 
 sealed trait TfaChallengeResponse
 

@@ -19,23 +19,15 @@ import org.scalatest.matchers.should.Matchers
 
 class GenesisTest extends AnyFreeSpec with Matchers with Results with AttemptValues with Logging {
   import scala.concurrent.ExecutionContext.Implicits.global
+  import TestUserManagement._
 
   private val controllerComponents = Helpers.stubControllerComponents()
-  private val config = new DatabaseAuthConfig(12, false, "pfi")
-  private val hashing = new PasswordHashing(7)
-  private val validator = new PasswordValidator(config.minPasswordLength)
-  private val generator = new SecureSecretGenerator
-  private val totp = Totp.googleAuthenticatorInstance()
 
   implicit override val patienceConfig = PatienceConfig(scaled(Span(2, Seconds)), scaled(Span(15, Millis)))
 
-  def provider(userManagement: UserManagement) =
-    new DatabaseUserProvider(config, hashing, userManagement, totp, generator, validator, new TwoFactorAuth(require2fa = false, totp, userManagement))
-
   "Genesis controller" - {
     "with an empty database" - {
-      val userManagement = TestUserManagement(Nil)
-      val userProvider = provider(userManagement)
+      val (userProvider, userManagement) = makeUserProvider(require2fa = false)
       val controllerWithNoUsers = new Genesis(controllerComponents, userProvider, userManagement, true)
 
       "executing the checkSetup action" - {
@@ -78,8 +70,8 @@ class GenesisTest extends AnyFreeSpec with Matchers with Results with AttemptVal
     }
 
     "simulating another node running genesis with an empty database" - {
-      val userManagement = TestUserManagement(Nil)
-      val controllerWithNoUsers = new Genesis(controllerComponents, provider(userManagement), userManagement, true)
+      val (userProvider, userManagement) = makeUserProvider(require2fa = false)
+      val controllerWithNoUsers = new Genesis(controllerComponents, userProvider, userManagement, true)
 
       "executing the checkSetup action" - {
         "should return setupCompleted: false" in {
@@ -102,8 +94,8 @@ class GenesisTest extends AnyFreeSpec with Matchers with Results with AttemptVal
     }
 
     "with a user in the database" - {
-      val management = TestUserManagement(List(DBUser("bob", Some("bob"), Some(BCryptPassword("bad-hash")), None, registered = false)))
-      val controllerWithAUser = new Genesis(controllerComponents, provider(management), management, true)
+      val (userProvider, userManagement) = makeUserProvider(require2fa = false, registeredUserNo2fa("bob"))
+      val controllerWithAUser = new Genesis(controllerComponents, userProvider, userManagement, true)
 
       "executing the checkSetup action" - {
         "should return setupCompleted: true" in {
@@ -124,9 +116,8 @@ class GenesisTest extends AnyFreeSpec with Matchers with Results with AttemptVal
     }
 
     "with the genesis flow disabled" - {
-      val management = TestUserManagement(Nil)
-      val controllerWithNoUsers =
-        new Genesis(controllerComponents, provider(management), management, false)
+      val (userProvider, userManagement) = makeUserProvider(require2fa = false)
+      val controllerWithNoUsers = new Genesis(controllerComponents, userProvider, userManagement, true)
 
       "executing the checkSetup action" - {
         "should return setupCompleted: true" in {

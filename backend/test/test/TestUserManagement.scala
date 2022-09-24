@@ -3,30 +3,90 @@ package test
 import model.manifest.Collection
 import model.user._
 import model.{Uri, user}
+import services.DatabaseAuthConfig
 import services.users.UserManagement
+import test.fixtures.GoogleAuthenticator
 import utils.attempt._
+import utils.auth.{PasswordHashing, PasswordValidator, TwoFactorAuth}
+import utils.auth.providers.DatabaseUserProvider
+import utils.auth.totp.{SecureSecretGenerator, Totp}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 
+case class TestUserRegistration(dbUser: DBUser, permissions: UserPermissions, collections: List[Collection], tfa: DBUser2fa) {
+  def username: String = dbUser.username
+}
+
 object TestUserManagement {
-  case class TestUserRegistration(dbUser: DBUser, permissions: UserPermissions, collections: List[Collection], tfa: DBUser2fa)
+  import GoogleAuthenticator._
+
   type Storage = Map[String, TestUserRegistration]
 
-  def apply(initialUsers: List[user.DBUser]): TestUserManagement = {
-    val withPermissions: TestUserManagement.Storage = initialUsers.map(user =>
-      user.username -> TestUserRegistration(user, UserPermissions.default, List.empty, DBUser2fa.empty))(scala.collection.breakOut)
+  val defaultPassword = "hardtoguess"
+  val defaultPasswordHashed = BCryptPassword("$2y$04$vZVs5a9NfK6GbyTuF6t22eNTmHcuzTMZftfLxiimNkkoO.spBvIZ6")
 
-    new TestUserManagement(withPermissions)
+  val ssg = new SecureSecretGenerator
+  val totp = Totp.googleAuthenticatorInstance()
+
+  def apply(initialUsers: List[TestUserRegistration]): TestUserManagement =
+    new TestUserManagement(initialUsers.map { u => u.username -> u }.toMap)
+
+  def makeUserProvider(require2fa: Boolean, users: TestUserRegistration*): (DatabaseUserProvider, TestUserManagement) = {
+    val config = DatabaseAuthConfig(
+      minPasswordLength = 8,
+      require2FA = require2fa,
+      totpIssuer = "giant"
+    )
+
+    val userManagement = TestUserManagement(users.toList)
+    val totp = Totp.googleAuthenticatorInstance()
+    val tfa = new TwoFactorAuth(config.require2FA, totp, userManagement)
+
+    val userProvider = new DatabaseUserProvider(
+      config = config,
+      passwordHashing = new PasswordHashing(4),
+      users = userManagement,
+      totp = totp,
+      ssg = new SecureSecretGenerator(),
+      passwordValidator = new PasswordValidator(config.minPasswordLength),
+      tfa = tfa
+    )
+
+    (userProvider, userManagement)
   }
 
-  def apply(initialUsers: Map[user.DBUser, (user.UserPermissions, List[Collection])]): TestUserManagement = {
-    new TestUserManagement(initialUsers.map { case (user, (perms, colls)) => user.username -> TestUserRegistration(user, perms, colls, DBUser2fa.empty) })
+  def registeredUserNo2fa(username: String, displayName: Option[String] = None, permissions: UserPermissions = UserPermissions.default,
+                          collections: List[Collection] = List.empty): TestUserRegistration = TestUserRegistration(
+    dbUser = DBUser(
+      username,
+      displayName = displayName,
+      password = Some(defaultPasswordHashed),
+      invalidationTime = None,
+      registered = true
+    ),
+    permissions,
+    collections,
+    tfa = DBUser2fa.initial(ssg, totp)
+  )
+
+  def unregisteredUserNo2fa(username: String): TestUserRegistration = {
+    val initial = registeredUserNo2fa(username)
+    initial.copy(dbUser = initial.dbUser.copy(registered = false))
+  }
+
+  def registeredUserTotp(username: String, displayName: Option[String] = None, permissions: UserPermissions = UserPermissions.default,
+                         collections: List[Collection] = List.empty): TestUserRegistration = {
+    val initial = registeredUserNo2fa(username, displayName, permissions, collections)
+    initial.copy(tfa = initial.tfa.copy(activeTotpSecret = Some(sampleSecret)))
+  }
+
+  def unregisteredUser2fa(username: String): TestUserRegistration = {
+    val initial = registeredUserTotp(username)
+    initial.copy(dbUser = initial.dbUser.copy(registered = false))
   }
 }
 
 class TestUserManagement(initialUsers: TestUserManagement.Storage) extends UserManagement {
-  import TestUserManagement.TestUserRegistration
-
   private var users: TestUserManagement.Storage = initialUsers
 
   def getAllUsers: List[DBUser] = users.values.toList.map(_.dbUser)
@@ -37,8 +97,8 @@ class TestUserManagement(initialUsers: TestUserManagement.Storage) extends UserM
 
   override def listUsers(): Attempt[List[(DBUser, List[Collection])]] = Attempt.Right {
     users.values.toList
+      .sortBy(_.username)
       .map { case TestUserRegistration(dbUser, _, collections, _) => dbUser -> collections }
-      .sortBy { case (dbUser, _) => dbUser.username }
   }
 
   def listUsersWithPermission(permission: UserPermission): Attempt[List[DBUser]] = Attempt.Right {

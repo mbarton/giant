@@ -28,8 +28,6 @@ object DBUser2fa {
   def initial(ssg: SecureSecretGenerator, totp: Totp): DBUser2fa = DBUser2fa(
     activeTotpSecret = None,
     inactiveTotpSecret = Some(ssg.createRandomSecret(totp.algorithm)),
-    // It is RECOMMENDED to let the user handle be 64 random bytes, and store this value in the user’s account
-    // https://www.w3.org/TR/webauthn-2/#sctn-user-handle-privacy
     webAuthnUserHandle = Some(WebAuthn.UserHandle.create(ssg)),
     webAuthnPublicKeys = List.empty,
     webAuthnChallenge = Some(WebAuthn.Challenge.create(ssg))

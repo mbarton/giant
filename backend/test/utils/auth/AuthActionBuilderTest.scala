@@ -30,6 +30,8 @@ import org.scalatest.matchers.should.Matchers
 class AuthActionBuilderTest extends AnyFreeSpec with Matchers with BaseOneAppPerSuite with FakeApplicationFactory
   with EitherValues with Results with Inside {
 
+  import TestUserManagement._
+
   override def fakeApplication: Application = {
     val env = Environment.simple(new File("."))
     val initialSettings: Map[String, AnyRef] = Map(
@@ -48,7 +50,7 @@ class AuthActionBuilderTest extends AnyFreeSpec with Matchers with BaseOneAppPer
   implicit val configuration: Configuration = fakeApplication.configuration
   implicit val clock: Clock = Clock.systemUTC()
 
-  val fakeUsers = TestUserManagement(List(user.DBUser("mickey", Some("Mickey Mouse"), Some(BCryptPassword("invalid")), None, registered = true)))
+  val fakeUsers = TestUserManagement(List(registeredUserNo2fa("mickey")))
 
   "AuthActionBuilder" - {
     val authActionBuilder = new DefaultAuthActionBuilder(Helpers.stubControllerComponents(), new DefaultFailureToResultMapper, 8 hours, 15 minutes, fakeUsers)(fakeApplication.configuration, Clock.systemUTC())
@@ -256,10 +258,16 @@ class AuthActionBuilderTest extends AnyFreeSpec with Matchers with BaseOneAppPer
   }
 
   private def builderWithUser(invalidationTime: Option[Long] = None, registered: Boolean = true): DefaultAuthActionBuilder = {
+    val baseUser = registeredUserNo2fa("mickey")
+    val user = baseUser.copy(
+      dbUser = baseUser.dbUser.copy(
+        invalidationTime = invalidationTime,
+        registered = registered
+      )
+    )
+
     new DefaultAuthActionBuilder(Helpers.stubControllerComponents(), new DefaultFailureToResultMapper, 8 hours, 15 minutes,
-      TestUserManagement(List(
-        user.DBUser("mickey", Some("Mickey Mouse"), Some(BCryptPassword("invalid")), invalidationTime, registered = registered)
-      ))
+      TestUserManagement(List(user))
     )
   }
 }

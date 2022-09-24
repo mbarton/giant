@@ -110,7 +110,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     )
   }
 
-  override def get2faConfig(request: Request[AnyContent], time: Epoch): Attempt[TfaUserConfiguration] = for {
+  override def get2faChallengeParameters(request: Request[AnyContent], time: Epoch): Attempt[TfaChallengeParameters] = for {
     user <- authenticateUser(request, time, RequireRegistered)
     username = user.username
 
@@ -118,7 +118,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     user2faConfig <- buildAndSave2faConfiguration(username, user2fa)
   } yield user2faConfig
 
-  override def register2faMethod(request: Request[AnyContent], time: Epoch, registration: TfaRegistration): Attempt[TfaUserConfiguration] = for {
+  override def register2faMethod(request: Request[AnyContent], time: Epoch, registration: TfaRegistration): Attempt[TfaChallengeParameters] = for {
     user <- authenticateUser(request, time, AllowUnregistered)
     username = user.username
 
@@ -139,7 +139,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     } yield dbUser
   }
 
-  private def buildAndSave2faConfiguration(username: String, existing2fa: DBUser2fa): Attempt[TfaUserConfiguration] = {
+  private def buildAndSave2faConfiguration(username: String, existing2fa: DBUser2fa): Attempt[TfaChallengeParameters] = {
     if(config.require2FA && existing2fa.activeTotpSecret.isEmpty) {
       Attempt.Left(SecondFactorRequired("2FA enrollment is required"))
     } else {
@@ -147,7 +147,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       val new2fa = existing2fa.copy(webAuthnChallenge = Some(challenge))
 
       users.setUser2fa(username, new2fa).map { _ =>
-        TfaUserConfiguration(
+        TfaChallengeParameters(
           totp = config.require2FA,
           webAuthnCredentialIds = new2fa.webAuthnPublicKeys.map { k => WebAuthn.toBase64(k.id) },
           webAuthnChallenge = WebAuthn.toBase64(challenge.data)

@@ -23,7 +23,7 @@ class TwoFactorAuth(require2fa: Boolean, totp: Totp, users: UserManagement)(impl
         case (RequireNotRegistered, true, _, _) => Attempt.Left(LoginFailure("User already registered"))
 
         case (RequireNotRegistered, false, true, Some(r)) => check2faChallengeResponse(username, r, time)
-        case (RequireNotRegistered, false, true, None) => Attempt.Left(SecondFactorRequired("2FA code required"))
+        case (RequireNotRegistered, false, true, None) => Attempt.Left(SecondFactorRequired("2FA enrollment is required"))
 
         case (RequireNotRegistered, false, false, Some(r)) => check2faChallengeResponse(username, r, time)
         case (RequireNotRegistered, false, false, None) => Attempt.Right(())
