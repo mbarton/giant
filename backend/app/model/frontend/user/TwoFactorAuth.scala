@@ -52,6 +52,9 @@ object TfaRegistration {
  * What 2fa methods can be used. Sent to the client before performing 2fa
  */
 case class TfaChallengeParameters(totp: Boolean, webAuthnCredentialIds: List[String], webAuthnChallenge: String)
+object TfaChallengeParameters {
+  implicit val format: Format[TfaChallengeParameters] = Json.format
+}
 
 sealed trait TfaChallengeResponse
 

@@ -63,7 +63,17 @@ class Authentication(override val controllerComponents: AuthControllerComponents
   }
 
   def register2faMethod = noAuth.ApiAction.attempt { request: Request[AnyContent] =>
-    ???
+    val time = Epoch.now
+    userAuthenticator.register2faMethod(request, time).map { params =>
+      Ok(Json.toJson(params))
+    }
+  }
+
+  def get2faChallengeParameters = noAuth.ApiAction.attempt { request: Request[AnyContent] =>
+    val time = Epoch.now
+    userAuthenticator.get2faChallengeParameters(request, time).map { params =>
+      Ok(Json.toJson(params))
+    }
   }
 
   def keepalive() = auth.ApiAction.attempt {

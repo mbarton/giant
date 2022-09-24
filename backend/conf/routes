@@ -84,8 +84,9 @@ GET           /api/currentUser/permissions                                  cont
 POST          /api/auth/token                                               controllers.api.Authentication.token
 DELETE        /api/auth/token                                               controllers.api.Authentication.invalidateExistingTokens
 GET           /api/keepalive                                                controllers.api.Authentication.keepalive
-POST          /api/auth/2fa/registrationParameters                          controllers.api.Authentication.get2faRegistrationParameters
+POST          /api/auth/2fa/registration/parameters                         controllers.api.Authentication.get2faRegistrationParameters
 POST          /api/auth/2fa/registration                                    controllers.api.Authentication.register2faMethod
+POST          /api/auth/2fa/challenge                                       controllers.api.Authentication.get2faChallengeParameters
 
 GET           /api/config                                                   controllers.frontend.App.configuration
 
