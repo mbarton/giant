@@ -32,5 +32,5 @@ trait UserProvider {
   /** get any configuration required to support 2fa (eg webauthn credential ids and challenge) */
   def get2faChallengeParameters(request: Request[AnyContent], time: Epoch): Attempt[TfaChallengeParameters]
   /** register a new 2fa method */
-  def register2faMethod(request: Request[AnyContent], time: Epoch, registration: TfaRegistration): Attempt[TfaChallengeParameters]
+  def register2faMethod(request: Request[AnyContent], time: Epoch): Attempt[TfaChallengeParameters]
 }

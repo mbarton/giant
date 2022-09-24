@@ -25,6 +25,29 @@ case class TotpCodeRegistration(code: String) extends TfaRegistration
 // TODO MRB: also store attestation documents?
 case class WebAuthnClientData(id: String, challenge: String, origin: String) extends TfaRegistration
 
+object TfaRegistration {
+  implicit val format: Format[TfaRegistration] = new Format[TfaRegistration] {
+    override def reads(json: JsValue): JsResult[TfaRegistration] = {
+      (json \ "type").validate[String].flatMap {
+        case "totp" =>
+          (json \ "code").validate[String].map(TotpCodeRegistration)
+
+        case other => JsError(s"Unknown TfaChallengeResponse type ${other}")
+      }
+    }
+
+    override def writes(r: TfaRegistration): JsValue = r match {
+      case TotpCodeRegistration(code) => Json.obj(
+        "type" -> "totp",
+        "code" -> code
+      )
+
+      case other =>
+        throw new IllegalArgumentException(s"Unknown TfaChallengeResponse type ${other.getClass}")
+    }
+  }
+}
+
 /**
  * What 2fa methods can be used. Sent to the client before performing 2fa
  */

@@ -2,7 +2,7 @@ package utils.auth.providers
 
 import model.frontend.user._
 import model.user._
-import play.api.libs.json.{JsBoolean, JsNumber, JsValue}
+import play.api.libs.json.{JsBoolean, JsNumber, JsValue, Json}
 import play.api.mvc.{AnyContent, Request}
 import services.DatabaseAuthConfig
 import services.users.UserManagement
@@ -119,12 +119,17 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     user2faConfig <- buildAndSave2faConfiguration(username, user2fa)
   } yield user2faConfig
 
-  override def register2faMethod(request: Request[AnyContent], time: Epoch, registration: TfaRegistration): Attempt[TfaChallengeParameters] = for {
+  override def register2faMethod(request: Request[AnyContent], time: Epoch): Attempt[TfaChallengeParameters] = for {
     user <- authenticateUser(request, time, AllowUnregistered, tfa.checkCanRegister)
     username = user.username
 
+    formData <- request.body.asFormUrlEncoded.toAttempt(Attempt.Left(ClientFailure("No form data")))
+    tfaRegistration <- formData.get("tfaRegistration").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No tfaRegistration form parameter")))
+
+    registration <- Json.parse(tfaRegistration).validate[TfaRegistration].toAttempt
+
     before <- users.getUser2fa(username)
-    after <- validateRegister2faMethod(before, registration, time)
+    after <- register2faMethod(before, registration, time)
 
     user2faConfig <- buildAndSave2faConfiguration(username, after)
   } yield user2faConfig
@@ -149,7 +154,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
 
       users.setUser2fa(username, new2fa).map { _ =>
         TfaChallengeParameters(
-          totp = config.require2FA,
+          totp = existing2fa.activeTotpSecret.nonEmpty,
           webAuthnCredentialIds = new2fa.webAuthnPublicKeys.map { k => WebAuthn.toBase64(k.id) },
           webAuthnChallenge = WebAuthn.toBase64(challenge.data)
         )
@@ -157,7 +162,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     }
   }
 
-  private def validateRegister2faMethod(before: DBUser2fa, registration: TfaRegistration, time: Epoch): Attempt[DBUser2fa] = {
+  private def register2faMethod(before: DBUser2fa, registration: TfaRegistration, time: Epoch): Attempt[DBUser2fa] = {
     registration match {
       case TotpCodeRegistration(code) =>
         for {

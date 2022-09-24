@@ -1,6 +1,6 @@
 package utils.auth.providers
 
-import model.frontend.user.{PartialUser, TotpCodeRegistration}
+import model.frontend.user.{PartialUser, TfaRegistration, TotpCodeRegistration}
 import model.user.NewUser
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.should.Matchers
@@ -9,19 +9,20 @@ import play.api.mvc.{AnyContentAsFormUrlEncoded, Results}
 import play.api.test.FakeRequest
 import test.{AttemptValues, TestUserManagement, TestUserRegistration}
 import utils.attempt.{LoginFailure, _}
-import utils.auth.totp.Base32Secret
+import utils.auth.totp.{Base32Secret, Totp}
 import utils.auth.webauthn.WebAuthn
 
 class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptValues with Results  {
   import TestUserManagement._
   import test.fixtures.GoogleAuthenticator._
 
-  def formParams(username: String, password: String, tfa: Option[String] = None): FakeRequest[AnyContentAsFormUrlEncoded] =
+  def formParams(username: String, password: String, tfa: Option[String] = None, tfaRegistration: Option[TfaRegistration] = None): FakeRequest[AnyContentAsFormUrlEncoded] =
     FakeRequest("GET", "/endpoint").withBody(
       AnyContentAsFormUrlEncoded(List(
         Some("username" -> Seq(username)),
         Some("password" -> Seq(password)),
-        tfa.map(v => "tfa" -> Seq(v))
+        tfa.map(v => "tfa" -> Seq(v)),
+        tfaRegistration.map(v => "tfaRegistration" -> Seq(Json.stringify(Json.toJson(v))))
       ).flatten.toMap)
     )
 
@@ -193,9 +194,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
         val (userProvider, users) = makeUserProvider(require2fa = true, unregisteredUserNo2fa("bob"))
 
         val register2faResult = userProvider.register2faMethod(
-          formParams(username = "bob", password = testPassword),
-          sampleEpoch,
-          TotpCodeRegistration(sampleAnswer)
+          formParams(username = "bob", password = testPassword, tfaRegistration = Some(TotpCodeRegistration(sampleAnswer))),
+          sampleEpoch
         )
 
         register2faResult.successValue.totp shouldBe true
@@ -441,40 +441,82 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
         second.webAuthnChallenge shouldBe WebAuthn.toBase64(challenge.get.data)
       }
     }
-//
-//    "register2faMethod" - {
-//      "fails when username wrong" in {
-//        ???
-//      }
-//
-//      "fails when password wrong" in {
-//        ???
-//      }
-//
-//      "fails when 2fa is incorrect if user is registered and 2fa is required" in {
-//        ???
-//      }
-//
-//      "fails when 2fa is incorrect if 2fa is not required but user wants to anyway" {
-//        ???
-//      }
-//
-//      "fails when 2fa is incorrect if 2fa required" in {
-//        ???
-//      }
-//
-//      "registers 2fa method when 2fa is not required but user wants to anyway" in {
-//        ???
-//      }
-//
-//      "registers 2fa method when 2fa required" in {
-//        ???
-//      }
-//
-//      "registers 2fa method when user is unregistered and has no existing tfa" in {
-//        ???
-//      }
-//    }
+
+    "register2faMethod" - {
+      "fails when username wrong" in {
+        val (userProvider, _) = makeUserProvider(require2fa = true, registeredUserNo2fa("bob"))
+
+        val result = userProvider.register2faMethod(formParams("ted", testPassword), sampleEpoch)
+
+        result.failureValue shouldBe an[UserDoesNotExistFailure]
+      }
+
+      "fails when password wrong" in {
+        val (userProvider, _) = makeUserProvider(require2fa = true, registeredUserNo2fa("bob"))
+
+        val result = userProvider.register2faMethod(formParams("bob", "hello!"), sampleEpoch)
+
+        result.failureValue shouldBe a[LoginFailure]
+      }
+
+      "fails when 2fa is incorrect if user is registered and 2fa is required" in {
+        val (userProvider, _) = makeUserProvider(require2fa = true, registeredUserTotp("bob"))
+
+        val result = userProvider.register2faMethod(formParams("bob", testPassword, Some("123456")), sampleEpoch)
+
+        result.failureValue shouldBe a[ClientFailure]
+      }
+
+      "fails when 2fa is incorrect if 2fa is not required but user wants to anyway" in {
+        val (userProvider, _) = makeUserProvider(require2fa = false, registeredUserNo2fa("bob"))
+
+        val result = userProvider.register2faMethod(formParams("bob", testPassword, Some("123456")), sampleEpoch)
+
+        result.failureValue shouldBe a[SecondFactorRequired]
+      }
+
+      "registers 2fa method when 2fa is not required but user wants to anyway" in {
+        val (userProvider, users) = makeUserProvider(require2fa = false, registeredUserNo2fa("bob"))
+
+        val registration = TotpCodeRegistration(sampleAnswer)
+        val result = userProvider.register2faMethod(formParams("bob", testPassword, tfaRegistration = Some(registration)), sampleEpoch)
+
+        result.successValue.totp shouldBe true
+
+        users.getUser2fa("bob").successValue.activeTotpSecret should not be empty
+      }
+
+      "registers 2fa method when 2fa required" in {
+        val (userProvider, users) = makeUserProvider(require2fa = true, registeredUserNo2fa("bob"))
+
+        val registration = TotpCodeRegistration(sampleAnswer)
+        val result = userProvider.register2faMethod(formParams("bob", testPassword, tfaRegistration = Some(registration)), sampleEpoch)
+
+        result.successValue.totp shouldBe true
+
+        users.getUser2fa("bob").successValue.activeTotpSecret should not be empty
+      }
+
+      "update totp code for existing user" in {
+        val (userProvider, users) = makeUserProvider(require2fa = true, registeredUserTotp("bob"))
+
+        val inactiveTotpSecret = users.getUser2fa("bob").successValue.inactiveTotpSecret.get
+        val code = Totp.googleAuthenticatorInstance().generateList(inactiveTotpSecret, sampleEpoch)(scala.concurrent.ExecutionContext.global).successValue.toList.head
+
+        val registration = TotpCodeRegistration(code)
+        val result = userProvider.register2faMethod(formParams(
+          username = "bob",
+          password = testPassword,
+          tfa = Some(sampleAnswer),
+          tfaRegistration = Some(registration)),
+          sampleEpoch
+        )
+
+        result.successValue.totp shouldBe true
+
+        users.getUser2fa("bob").successValue.activeTotpSecret should contain(inactiveTotpSecret)
+      }
+    }
 
     // TODO MRB: add more tests (possibly integration tests rather than here?)
     //  - reset totp code (triggered by the user)
