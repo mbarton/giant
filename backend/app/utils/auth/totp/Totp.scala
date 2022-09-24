@@ -47,7 +47,7 @@ object Totp {
   *                             clock drift.
   */
 class Totp(val codeLength: Int, val algorithm: Algorithm, windowErrorTolerance: Int) {
-  def checkCodeFatal(secret: Secret, code: String, time: Epoch, failure: Failure = ClientFailure("2FA code wasn't valid, check the time on your device"))(implicit ec: ExecutionContext): Attempt[Unit] = {
+  def checkCodeFatal(secret: Secret, code: String, time: Epoch, failure: Failure = ClientFailure("2FA code not valid"))(implicit ec: ExecutionContext): Attempt[Unit] = {
     checkCode(secret, code, time).flatMap { isValid =>
       if (isValid) Attempt.Right(()) else Attempt.Left(failure)
     }

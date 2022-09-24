@@ -78,11 +78,11 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           sampleEpoch
         )
 
-        authResult.failureValue shouldBe MisconfiguredAccount("2FA is required but user is not enrolled")
+        authResult.failureValue shouldBe SecondFactorRequired("2FA enrollment is required")
       }
 
       "authentication fails when the password is right but 2FA is required" in {
-        val (userProvider, _) = makeUserProvider(require2fa = true, registeredUserNo2fa("bob"))
+        val (userProvider, _) = makeUserProvider(require2fa = true, registeredUserTotp("bob"))
 
         val authResult = userProvider.authenticate(
           formParams(username = "bob", password = defaultPassword),
@@ -96,22 +96,23 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
         val (userProvider, _) = makeUserProvider(require2fa = true, registeredUserTotp("bob"))
 
         val authResult = userProvider.authenticate(
-          formParams(username = "bob", password = defaultPassword, tfa = Some(sampleAnswer)),
+          formParams(username = "bob", password = defaultPassword, tfa = Some("123456")),
           sampleEpoch
         )
 
-        authResult.failureValue shouldBe SecondFactorRequired("2FA code not valid")
+        authResult.failureValue shouldBe ClientFailure("2FA code not valid")
       }
 
       "authentication succeeds when the password and 2FA are right" in {
-        val (userProvider, _) = makeUserProvider(require2fa = true, registeredUserTotp("bob"))
+        val (userProvider, _) = makeUserProvider(require2fa = true,
+          registeredUserTotp("bob", displayName = Some("Bob Bob Ricard")))
 
         val authResult = userProvider.authenticate(
           formParams(username = "bob", password = defaultPassword, tfa = Some(sampleAnswer)),
           sampleEpoch
         )
 
-        authResult.successValue shouldBe PartialUser("bob", "Bob Bob")
+        authResult.successValue shouldBe PartialUser("bob", "Bob Bob Ricard")
       }
     }
 
@@ -126,15 +127,18 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
       "fails if temporary password does not meet requirements" in {
         val (userProvider, _) = makeUserProvider(require2fa = true)
 
-        val result = userProvider.createUser("bob", Json.toJson(NewUser("sheila", "a")))
+        val result = userProvider.createUser("bob", Json.toJson(NewUser("bob", "a")))
         result.failureValue shouldBe ClientFailure(s"Provided password too short, must be at least ${userProvider.config.minPasswordLength} characters")
       }
 
       "creates user and generates initial 2fa configuration" in {
-        val (userProvider, _) = makeUserProvider(require2fa = true)
+        val (userProvider, users) = makeUserProvider(require2fa = true)
 
-        val result = userProvider.createUser("bob", Json.toJson("bob", defaultPassword))
+        val result = userProvider.createUser("bob", Json.toJson(NewUser("bob", defaultPassword)))
         result.successValue shouldBe PartialUser("bob", "New User")
+
+        val inactiveTotpSecret = users.getUser2fa("bob").successValue.inactiveTotpSecret
+        inactiveTotpSecret should not be empty
 
         val tfaParams = userProvider.get2faRegistrationParameters(
           formParams(username = "bob", password = defaultPassword),
@@ -142,8 +146,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           "test-instance"
         ).successValue
 
-        tfaParams.totpSecret shouldBe sampleSecret.toBase32
-        tfaParams.totpUrl shouldBe s"otpauth://totp/bob?secret=${sampleSecret.toBase32}&issuer=giant%20(test-instance)"
+        tfaParams.totpSecret shouldBe inactiveTotpSecret.get.toBase32
+        tfaParams.totpUrl shouldBe s"otpauth://totp/bob?secret=${inactiveTotpSecret.get.toBase32}&issuer=giant%20(test-instance)"
       }
     }
 
@@ -162,7 +166,7 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
 
         val bob = users.getUser("bob").successValue
         bob.registered shouldBe true
-        bob.displayName shouldBe Some("Bob Bob")
+        bob.displayName shouldBe Some("Bob Bob Ricard")
         bob.password shouldNot be(Some(defaultPasswordHashed))
       }
 
@@ -174,7 +178,10 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           "previousPassword" -> defaultPassword,
           "newPassword" -> defaultPassword,
           "displayName" -> "Bob Bob",
-          "tfa" -> sampleAnswer
+          "tfa" -> Json.obj(
+            "type" -> "totp",
+            "code" -> sampleAnswer
+          )
         ), sampleEpoch)
 
         result.failureValue shouldBe SecondFactorRequired("2FA enrollment is required")
@@ -201,7 +208,10 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           "previousPassword" -> defaultPassword,
           "newPassword" -> defaultPassword,
           "displayName" -> "Bob Bob",
-          "tfa" -> sampleAnswer
+          "tfa" -> Json.obj(
+            "type" -> "totp",
+            "code" -> sampleAnswer
+          )
         ), sampleEpoch)
 
         registerUserResult.successValue
@@ -245,7 +255,10 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
       }
 
       "fails when 2FA is wrong" in {
-        val (userProvider, users) = makeUserProvider(require2fa = true, registeredUserTotp("bob"))
+        val baseUser = registeredUserTotp("bob")
+        val user = baseUser.copy(dbUser = baseUser.dbUser.copy(registered = false))
+
+        val (userProvider, users) = makeUserProvider(require2fa = true, user)
         val unregisteredBob = users.getUser("bob").successValue
 
         val result = userProvider.registerUser(Json.obj(
@@ -253,10 +266,13 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           "previousPassword" -> defaultPassword,
           "newPassword" -> defaultPassword,
           "displayName" -> "Bob Bob",
-          "tfa" -> "123456"
+          "tfa" -> Json.obj(
+            "type" -> "totp",
+            "code" -> "123456"
+          )
         ), sampleEpoch)
 
-        result.failureValue shouldBe ClientFailure("Sample 2FA code wasn't valid, check the time on your device")
+        result.failureValue shouldBe ClientFailure("2FA code not valid")
 
         users.getUser("bob").successValue shouldBe unregisteredBob
       }

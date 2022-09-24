@@ -20,7 +20,9 @@ case class DBUser2fa(
   webAuthnPublicKeys: List[WebAuthnPublicKey],
   // to support registering an additional public key
   webAuthnChallenge: Option[WebAuthn.Challenge]
-)
+) {
+  def hasMethodRegistered: Boolean = activeTotpSecret.nonEmpty || webAuthnPublicKeys.nonEmpty
+}
 
 object DBUser2fa {
   val empty: DBUser2fa = DBUser2fa(None, None, None, List.empty, None)

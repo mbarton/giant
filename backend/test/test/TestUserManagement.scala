@@ -10,6 +10,7 @@ import utils.attempt._
 import utils.auth.{PasswordHashing, PasswordValidator, TwoFactorAuth}
 import utils.auth.providers.DatabaseUserProvider
 import utils.auth.totp.{SecureSecretGenerator, Totp}
+import utils.auth.webauthn.WebAuthn
 
 import scala.concurrent.ExecutionContext.Implicits.global
 
@@ -66,7 +67,13 @@ object TestUserManagement {
     ),
     permissions,
     collections,
-    tfa = DBUser2fa.initial(ssg, totp)
+    tfa = DBUser2fa(
+      activeTotpSecret = None,
+      inactiveTotpSecret = Some(sampleSecret),
+      webAuthnUserHandle = Some(WebAuthn.UserHandle.create(ssg)),
+      webAuthnPublicKeys = List.empty,
+      webAuthnChallenge = Some(WebAuthn.Challenge.create(ssg))
+    )
   )
 
   def unregisteredUserNo2fa(username: String): TestUserRegistration = {

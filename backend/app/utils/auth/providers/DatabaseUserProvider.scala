@@ -28,7 +28,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
   )
 
   override def authenticate(request: Request[AnyContent], time: Epoch): Attempt[PartialUser] =
-    authenticateUser(request, time, RequireRegistered).map(_.toPartial)
+    authenticateUser(request, time, RequireRegistered, tfa.check2fa).map(_.toPartial)
 
   override def genesisUser(request: JsValue, time: Epoch): Attempt[PartialUser] = {
     for {
@@ -52,6 +52,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
           DBUser(wholeUser.username, Some("New User"), Some(hash), invalidationTime = None, registered = false),
         UserPermissions.default
       )
+      _ <- users.setUser2fa(user.username, DBUser2fa.initial(ssg, totp))
     } yield user.toPartial
   }
 
@@ -61,7 +62,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       _ <- passwordHashing.verifyUser(users.getUser(userData.username), userData.previousPassword, RequireNotRegistered)
       _ <- passwordValidator.validate(userData.newPassword)
       newHash <- passwordHashing.hash(userData.newPassword)
-      _ <- tfa.check2fa(userData.username, userData.tfa, time, RequireNotRegistered)
+      _ <- tfa.check2fa(userData.username, userData.tfa, time)
       _ <- users.registerUser(userData.username, userData.displayName, Some(newHash))
     } yield ()
   }
@@ -79,7 +80,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
   }
 
   override def get2faRegistrationParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters] = for {
-    user <- authenticateUser(request, time, AllowUnregistered)
+    user <- authenticateUser(request, time, AllowUnregistered, tfa.checkCanRegister)
     username = user.username
 
     existingTfa <- users.getUser2fa(username)
@@ -111,7 +112,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
   }
 
   override def get2faChallengeParameters(request: Request[AnyContent], time: Epoch): Attempt[TfaChallengeParameters] = for {
-    user <- authenticateUser(request, time, RequireRegistered)
+    user <- authenticateUser(request, time, RequireRegistered, TwoFactorAuth.NoCheck)
     username = user.username
 
     user2fa <- users.getUser2fa(username)
@@ -119,7 +120,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
   } yield user2faConfig
 
   override def register2faMethod(request: Request[AnyContent], time: Epoch, registration: TfaRegistration): Attempt[TfaChallengeParameters] = for {
-    user <- authenticateUser(request, time, AllowUnregistered)
+    user <- authenticateUser(request, time, AllowUnregistered, tfa.checkCanRegister)
     username = user.username
 
     before <- users.getUser2fa(username)
@@ -128,14 +129,14 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     user2faConfig <- buildAndSave2faConfiguration(username, after)
   } yield user2faConfig
 
-  private def authenticateUser(request: Request[AnyContent], time: Epoch, registrationCheck: RegistrationCheck): Attempt[DBUser] = {
+  private def authenticateUser(request: Request[AnyContent], time: Epoch, check: RegistrationCheck, checkTfa: TwoFactorAuth.Check): Attempt[DBUser] = {
     for {
       formData <- request.body.asFormUrlEncoded.toAttempt(Attempt.Left(ClientFailure("No form data")))
       username <- formData.get("username").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No username form parameter")))
       password <- formData.get("password").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No password form parameter")))
       tfaChallengeResponse = formData.get("tfa").flatMap(_.headOption).map(TotpCodeChallengeResponse)
-      dbUser <- passwordHashing.verifyUser(users.getUser(username), password, registrationCheck)
-      _ <- tfa.check2fa(username, tfaChallengeResponse, time, registrationCheck)
+      dbUser <- passwordHashing.verifyUser(users.getUser(username), password, check)
+      _ <- checkTfa(username, tfaChallengeResponse, time)
     } yield dbUser
   }
 
