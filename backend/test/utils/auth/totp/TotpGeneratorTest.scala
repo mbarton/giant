@@ -153,40 +153,6 @@ class TotpGeneratorTest extends AnyFreeSpec with Matchers with AttemptValues wit
           }
         }
       }
-
-      "checkUser2fa" - {
-        // TODO MRB: port this across to the new TwoFactorAuth class
-        ???
-
-        val totp = Totp.googleAuthenticatorInstance()
-
-        case class Permutation(required: Boolean, secret: Option[Secret], code: Option[String], expect: Either[Failure, Boolean])
-        val codeRequired = Left(SecondFactorRequired("2FA code required"))
-        val notEnrolled = Left(MisconfiguredAccount("2FA is required but user is not enrolled"))
-        val badCode = Left(SecondFactorRequired("2FA code not valid"))
-        val permutations = Table(
-          ("require2FA",  "totpSecret",         "maybeCode",                "expected"),
-          (true,          Some(sampleSecret),   sampleAnswers.headOption,   Right(true)),
-          (true,          Some(sampleSecret),   Some("000000"),             badCode),
-          (true,          Some(sampleSecret),   None,                       codeRequired),
-          (true,          None,                 sampleAnswers.headOption,   notEnrolled),
-          (true,          None,                 Some("000000"),             notEnrolled),
-          (true,          None,                 None,                       notEnrolled),
-          (false,         Some(sampleSecret),   sampleAnswers.headOption,   Right(true)),
-          (false,         Some(sampleSecret),   Some("000000"),             badCode),
-          (false,         Some(sampleSecret),   None,                       codeRequired),
-          (false,         None,                 sampleAnswers.headOption,   Right(false)),
-          (false,         None,                 Some("000000"),             Right(false)),
-          (false,         None,                 None,                       Right(false))
-        )
-
-//        "all permutations should pass" in {
-//          forAll(permutations) { (require2FA, totpSecret, maybeCode, expected) =>
-//            val result = totp.checkUser2fa(require2FA, totpSecret, maybeCode, sampleEpoch).eitherValue
-//            result shouldBe expected
-//          }
-//        }
-      }
     }
   }
 }

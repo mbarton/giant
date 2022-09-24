@@ -2,9 +2,7 @@ package controllers.api
 
 import akka.stream.Materializer
 import akka.stream.testkit.NoMaterializer
-import model.frontend.user.{TotpCodeRegistration, UserRegistration}
-import model.user
-import model.user.{BCryptPassword, DBUser, NewUser, UserPermissions}
+import model.user.{NewUser, UserPermissions}
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.should.Matchers
@@ -15,11 +13,6 @@ import play.api.test.Helpers._
 import services.users.UserManagement
 import test.integration.Helpers.stubControllerComponentsAsUser
 import test.{AttemptValues, TestUserManagement, TestUserRegistration}
-import utils.attempt.{ClientFailure, SecondFactorRequired}
-import utils.auth.TwoFactorAuth
-import utils.auth.providers.DatabaseUserProvider
-import utils.auth.totp.Base32Secret
-import utils.auth.webauthn.WebAuthn
 
 class UsersTest extends AnyFreeSpec with Matchers with Results with ScalaFutures with AttemptValues {
   import test.TestUserManagement._
@@ -85,7 +78,7 @@ class UsersTest extends AnyFreeSpec with Matchers with Results with ScalaFutures
         }
 
         disallow(controller.createUser("test"), Json.toJson(NewUser("test", "biglongpassword1234")))
-        disallow(controller.removeUser(punter.username), AnyContentAsEmpty)
+        disallow(controller.removeUser(admin.username), AnyContentAsEmpty)
 
         disallow(controller.updateUserFullname(punter.username), Json.parse("""{"displayName": "test"}"""))
         disallow(controller.updateUserPassword(punter.username), Json.parse("""{"password": "biglongpassword1234"}"""))

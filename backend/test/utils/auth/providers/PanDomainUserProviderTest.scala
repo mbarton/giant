@@ -115,7 +115,7 @@ class PanDomainUserProviderTest extends AnyFreeSpec with Matchers with AttemptVa
           pandaPrivateKey
         )
 
-        val bob = registeredUserNo2fa("bob@example.net")
+        val bob = registeredUserNo2fa("bob@example.net", displayName = Some("Bob Bob Ricard"))
 
         val config = PandaAuthConfig("bob", "bob.key", "bobCookie", require2FA = true, "https://login.bob.example/login", AwsConnection("eu-west-1", None))
         val users = TestUserManagement(List(bob))
@@ -126,10 +126,10 @@ class PanDomainUserProviderTest extends AnyFreeSpec with Matchers with AttemptVa
           now
         )
 
-        result.successValue shouldBe PartialUser("bob@example.net", "Bob Bob")
+        result.successValue shouldBe PartialUser("bob@example.net", "Bob Bob Ricard")
 
         val bob2 = users.getUser("bob@example.net").successValue
-        bob2.displayName shouldBe Some("Bob Bob")
+        bob2.displayName shouldBe Some("Bob Bob Ricard")
         bob2.registered shouldBe true
       }
     }
