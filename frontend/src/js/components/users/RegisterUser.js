@@ -16,12 +16,12 @@ export class RegisterUser extends React.Component {
     state = {
         hasCompletedPhase1: false,
 
-        username: '',
-        previousPassword: '',
+        username: 'mtest',
+        previousPassword: 'michaelbarton123',
 
-        displayName: '',
-        newPassword: '',
-        confirmNewPassword: '',
+        displayName: 'Burger Prince',
+        newPassword: 'michaelbarton',
+        confirmNewPassword: 'michaelbarton',
 
         tfaCode: '',
 
@@ -96,8 +96,8 @@ export class RegisterUser extends React.Component {
 
     continuePressed = () => {
         if (!this.state.hasCompletedPhase1 && this.canContinue()) {
-            generate2faToken(this.state.username)
-                .then(res => this.setState({url: res.url, secret: res.secret, hasCompletedPhase1: true}));
+            generate2faToken(this.state.username, this.state.previousPassword)
+                .then(res => this.setState({url: res.totpUrl, secret: res.totpSecret, hasCompletedPhase1: true}));
 
         } else if (this.state.hasCompletedPhase1 && this.canFinish()) {
             const totpActivation = {

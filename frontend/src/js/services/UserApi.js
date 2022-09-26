@@ -75,6 +75,13 @@ export function genesisSetupInitialPandaUserApi(email) {
     }).then(res => res.json());
 }
 
-export function generate2faToken(username) {
-    return fetch(`/api/auth/generate2faToken/${username}`).then(res => res.json());
+export function generate2faToken(username, password) {
+    const body = new URLSearchParams();
+    body.append('username', username);
+    body.append('password', password);
+
+    return fetch(`/api/auth/2fa/registration/parameters`, {
+        method: 'POST',
+        body
+    }).then(res => res.json());
 }
