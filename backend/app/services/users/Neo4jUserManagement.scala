@@ -8,6 +8,7 @@ import model.user._
 import org.neo4j.driver.v1.Values.parameters
 import org.neo4j.driver.v1.exceptions.ClientException
 import org.neo4j.driver.v1.{Driver, Record, StatementResult}
+import play.api.libs.json.Json
 import services.Neo4jQueryLoggingConfig
 import services.annotations.Annotations
 import services.index.{Index, Pages}
@@ -299,43 +300,38 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
     }
   }
 
+  // TODO MRB: do we need this separate from getUser?
   override def getUser2fa(username: String): Attempt[DBUser2fa] = attemptTransaction { tx =>
     tx.run(
       """
         |MATCH (user: User { username: {username} })
-        |OPTIONAL MATCH (user)-[:HAS_2FA_CREDENTIAL]->(key :WebAuthnPublicKey)
-        |RETURN user, key""".stripMargin,
+        |RETURN user""".stripMargin,
       parameters("username", username)).flatMap { result =>
-        val rows = result.list().asScala
-
-        if(rows.isEmpty) {
-          Attempt.Left(UserDoesNotExistFailure(username))
-        } else {
-          val userNode = rows.head.get("user")
-          val keys = rows.map(_.get("key"))
-
-          Attempt.Right(DBUser2fa.fromNeo4jValue(userNode, keys.toList))
+        result.hasKeyOrFailure("user", UserDoesNotExistFailure(username)).map { result =>
+          DBUser2fa.fromNeo4jValue(result.get("user"))
         }
     }
   }
 
-  override def setUser2fa(user: String, tfa: DBUser2fa): Attempt[Unit] = attemptTransaction { tx =>
+  // TODO MRB: it's probably safer to mark older keys as unused rather than delete them
+  // TODO MRB: should we split out add/remove key to separate operations?
+  override def setUser2fa(username: String, tfa: DBUser2fa): Attempt[Unit] = attemptTransaction { tx =>
+    // The active totp secret field is called totpSecret for backwards compatibility with versions of Giant
+    // that only supported totp before webauthn was introduced
     tx.run("""
       MATCH(user: User {username: {username} })
       SET user.totpSecret = {activeTotpSecret}
       SET user.inactiveTotpSecret = {inactiveTotpSecret}
       SET user.webAuthnUserHandle = {webAuthnUserHandle}
       SET user.webAuthnChallenge = {webAuthnChallenge}
-      UNWIND {webAuthnPublicKeys} as webAuthnPublicKey
-        MERGE (user)-[:HAS_2FA_CREDENTIAL]->(key :WebAuthnPublicKey)
-        SET key.id = webAuthnPublicKey.id
-        SET key.publicKeyCose = webAuthnPublicKey.publicKeyCose
+      SET user.webAuthnPublicKeys = {webAuthnPublicKeys}
     """, parameters(
-      "totpSecret", tfa.activeTotpSecret.map(_.toBase32).orNull,
+      "username", username,
+      "activeTotpSecret", tfa.activeTotpSecret.map(_.toBase32).orNull,
       "inactiveTotpSecret", tfa.inactiveTotpSecret.map(_.toBase32).orNull,
       "webAuthnUserHandle", tfa.webAuthnUserHandle.map(v => WebAuthn.toBase64(v.data)).orNull,
       "webAuthnChallenge", tfa.webAuthnChallenge.map(v => WebAuthn.toBase64(v.data)).orNull,
-      "webAuthnPublicKeys", tfa.webAuthnPublicKeys.map(k => Map("id" -> k.id, "publicKeyCose" -> k.publicKeyCose).asJava)
+      "webAuthnPublicKeys", tfa.webAuthnPublicKeys.map(k => Json.stringify(Json.toJson(k))).asJava
     )).map(_ => ())
   }
 
