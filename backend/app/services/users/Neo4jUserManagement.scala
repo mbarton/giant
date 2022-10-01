@@ -422,7 +422,7 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
     // The active totp secret field is called totpSecret for backwards compatibility with versions of Giant
     // that only supported totp before webauthn was introduced
     List(
-      "activeTotpSecret" -> tfa.activeTotpSecret.map(_.toBase32).orNull,
+      "totpSecret" -> tfa.activeTotpSecret.map(_.toBase32).orNull,
       "inactiveTotpSecret" -> tfa.inactiveTotpSecret.map(_.toBase32).orNull,
       "webAuthnUserHandle" -> tfa.webAuthnUserHandle.map(v => WebAuthn.toBase64(v.data)).orNull,
       "webAuthnChallenge" -> tfa.webAuthnChallenge.map(v => WebAuthn.toBase64(v.data)).orNull,
