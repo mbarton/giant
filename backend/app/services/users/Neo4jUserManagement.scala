@@ -107,7 +107,10 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
          |   displayName: {displayName},
          |   password: {password},
          |   invalidationTime: {invalidationTime},
-         |   registered: {registered}
+         |   registered: {registered},
+         |   inactiveTotpSecret: {inactiveTotpSecret},
+         |   webAuthnUserHandle: {webAuthnUserHandle},
+         |   webAuthnChallenge: {webAuthnChallenge}
          | })
          |
          | ${permissionQuery(permissions)}
@@ -120,7 +123,10 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
         "password", user.password.map(_.hash).orNull,
         "invalidationTime", user.invalidationTime.map(_.asInstanceOf[java.lang.Long]).orNull,
         "registered", Boolean.box(user.registered),
-        "granted", permissions.granted.map(_.toString).toArray
+        "granted", permissions.granted.map(_.toString).toArray,
+        "inactiveTotpSecret", user.tfa.inactiveTotpSecret.map(_.toBase32).orNull,
+        "webAuthnUserHandle", user.tfa.webAuthnUserHandle.map(v => WebAuthn.toBase64(v.data)).orNull,
+        "webAuthnChallenge", user.tfa.webAuthnChallenge.map(v => WebAuthn.toBase64(v.data)).orNull,
       )
     )
 
@@ -135,25 +141,26 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
     }
   }
 
-  override def registerUser(username: String, displayName: String, password: Option[BCryptPassword], tfa: Option[DBUser2fa]): Attempt[DBUser] = attemptTransaction { tx =>
+  override def registerUser(username: String, displayName: String, password: Option[BCryptPassword], tfa: Option[DBUser2fa]): Attempt[DBUser] = {
+    val fields: List[(String, Any)] = List(
+      "displayName" -> displayName,
+      "password" -> password.map(_.hash).orNull,
+      "registered" -> true
+    ) ++ tfa.map(getUser2faFields).getOrElse(List.empty)
+
     for {
-      user <- updateUserInTransaction(tx, username, "displayName" -> displayName,
-        "password" -> password.map(_.hash).orNull,
-        "registered" -> true)
-      _ <- tfa.map(setUser2faInTransaction(tx, username, _)).getOrElse(Attempt.Right(()))
+      user <- updateUser(username, fields: _*)
       _ <- createDefaultUserResources(user.toPartial)
     } yield {
       user
     }
   }
 
-  override def updateUserDisplayName(username: String, displayName: String): Attempt[DBUser] = attemptTransaction { tx =>
-    updateUserInTransaction(tx, username, "displayName" -> displayName)
-  }
+  override def updateUserDisplayName(username: String, displayName: String): Attempt[DBUser] =
+    updateUser(username, "displayName" -> displayName)
 
-  override def updateUserPassword(username: String, password: BCryptPassword): Attempt[DBUser] = attemptTransaction { tx =>
-    updateUserInTransaction(tx, username, "password" -> password.hash)
-  }
+  override def updateUserPassword(username: String, password: BCryptPassword): Attempt[DBUser] =
+    updateUser(username, "password" -> password.hash)
 
   override def getUser(username: String): Attempt[DBUser] = attemptTransaction { tx =>
     val attemptedResult = tx.run(
@@ -303,24 +310,10 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
     }
   }
 
-  // TODO MRB: do we need this separate from getUser?
-  override def getUser2fa(username: String): Attempt[DBUser2fa] = attemptTransaction { tx =>
-    tx.run(
-      """
-        |MATCH (user: User { username: {username} })
-        |RETURN user""".stripMargin,
-      parameters("username", username)).flatMap { result =>
-        result.hasKeyOrFailure("user", UserDoesNotExistFailure(username)).map { result =>
-          DBUser2fa.fromNeo4jValue(result.get("user"))
-        }
-    }
-  }
-
   // TODO MRB: it's probably safer to mark older keys as unused rather than delete them
   // TODO MRB: should we split out add/remove key to separate operations?
-  override def setUser2fa(username: String, tfa: DBUser2fa): Attempt[Unit] = attemptTransaction { tx =>
-    setUser2faInTransaction(tx, username, tfa)
-  }
+  override def setUser2fa(username: String, tfa: DBUser2fa): Attempt[Unit] =
+    updateUser(username, getUser2faFields(tfa): _*).map(_ => ())
 
   private def singleUser(username: String, statementResult: StatementResult, field: String = "user"): Attempt[DBUser] = {
     statementResult.hasKeyOrFailure(field, UserDoesNotExistFailure(username)).map { result =>
@@ -403,7 +396,7 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
     }
   }
 
-  private def updateUserInTransaction(tx: AttemptWrappedTransaction, username: String, fields: (String, Any)*): Attempt[DBUser] = {
+  private def updateUser(username: String, fields: (String, Any)*): Attempt[DBUser] = attemptTransaction { tx =>
     val setStatements = fields.map { case (fieldName, _) =>
       s"SET user.$fieldName = {$fieldName}"
     }
@@ -425,25 +418,15 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
     } yield user
   }
 
-  private def setUser2faInTransaction(tx: AttemptWrappedTransaction, username: String, tfa: DBUser2fa): Attempt[Unit] = {
+  private def getUser2faFields(tfa: DBUser2fa): List[(String, Any)] = {
     // The active totp secret field is called totpSecret for backwards compatibility with versions of Giant
     // that only supported totp before webauthn was introduced
-
-    tx.run(
-      """
-      MATCH(user: User {username: {username} })
-      SET user.totpSecret = {activeTotpSecret}
-      SET user.inactiveTotpSecret = {inactiveTotpSecret}
-      SET user.webAuthnUserHandle = {webAuthnUserHandle}
-      SET user.webAuthnChallenge = {webAuthnChallenge}
-      SET user.webAuthnPublicKeys = {webAuthnPublicKeys}
-    """, parameters(
-        "username", username,
-        "activeTotpSecret", tfa.activeTotpSecret.map(_.toBase32).orNull,
-        "inactiveTotpSecret", tfa.inactiveTotpSecret.map(_.toBase32).orNull,
-        "webAuthnUserHandle", tfa.webAuthnUserHandle.map(v => WebAuthn.toBase64(v.data)).orNull,
-        "webAuthnChallenge", tfa.webAuthnChallenge.map(v => WebAuthn.toBase64(v.data)).orNull,
-        "webAuthnPublicKeys", tfa.webAuthnPublicKeys.map(k => Json.stringify(Json.toJson(k))).asJava
-      )).map(_ => ())
+    List(
+      "activeTotpSecret" -> tfa.activeTotpSecret.map(_.toBase32).orNull,
+      "inactiveTotpSecret" -> tfa.inactiveTotpSecret.map(_.toBase32).orNull,
+      "webAuthnUserHandle" -> tfa.webAuthnUserHandle.map(v => WebAuthn.toBase64(v.data)).orNull,
+      "webAuthnChallenge" -> tfa.webAuthnChallenge.map(v => WebAuthn.toBase64(v.data)).orNull,
+      "webAuthnPublicKeys" -> tfa.webAuthnPublicKeys.map(k => Json.stringify(Json.toJson(k))).asJava
+    )
   }
 }

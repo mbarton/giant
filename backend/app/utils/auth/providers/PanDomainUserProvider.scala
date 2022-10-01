@@ -2,8 +2,8 @@ package utils.auth.providers
 
 import com.gu.pandomainauth.model._
 import com.gu.pandomainauth.{PanDomain, PublicKey}
-import model.frontend.user.{PartialUser, TfaRegistration, TfaRegistrationParameters, TfaChallengeParameters}
-import model.user.{DBUser, UserPermissions}
+import model.frontend.user.{PartialUser, TfaChallengeParameters, TfaRegistration, TfaRegistrationParameters}
+import model.user.{DBUser, DBUser2fa, UserPermissions}
 import play.api.libs.json.{JsString, JsValue}
 import play.api.mvc.{AnyContent, Request}
 import services.users.UserManagement
@@ -69,17 +69,15 @@ class PanDomainUserProvider(val config: PandaAuthConfig, currentPublicKey: () =>
   override def genesisUser(request: JsValue, time: Epoch): Attempt[PartialUser] = {
     for {
       email <- (request \ "username").validate[String].toAttempt
-      user = DBUser(email, None, None, None, registered = false)
-      createdUser <- users.createUser(user, UserPermissions.bigBoss)
+      createdUser <- users.createUser(dbUser(email), UserPermissions.bigBoss)
     } yield createdUser.toPartial
   }
 
   /** create a new user account */
   override def createUser(username: String, request: JsValue): Attempt[PartialUser] = {
-    val user = DBUser(username, None, None, None, registered = false)
     for {
       // we mark this user as not registered so we can cache the display name when we see them
-      createdUser <- users.createUser(user, UserPermissions.default)
+      createdUser <- users.createUser(dbUser(username), UserPermissions.default)
     } yield createdUser.toPartial
   }
 
@@ -97,4 +95,15 @@ class PanDomainUserProvider(val config: PandaAuthConfig, currentPublicKey: () =>
 
   def unsupportedOperation[T] = Attempt.Left[T](UnsupportedOperationFailure("This authentication provider is federated and doesn't support this operation."))
 
+  private def dbUser(username: String): DBUser = DBUser(
+    username = username,
+    // filled in at registration
+    displayName = None,
+    // no password, auth is done by panda cookie
+    password = None,
+    invalidationTime = None,
+    registered = false,
+    // tfa fully handled by the panda OAuth provider for now. We could require separate tfa for Giant in the future
+    tfa = DBUser2fa.empty
+  )
 }

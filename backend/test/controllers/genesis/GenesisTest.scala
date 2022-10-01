@@ -1,7 +1,7 @@
 package controllers.genesis
 
 import model.frontend.user.{NewGenesisUser, PartialUser}
-import model.user.{BCryptPassword, DBUser, NewUser, UserPermissions}
+import model.user.{BCryptPassword, DBUser, DBUser2fa, NewUser, UserPermissions}
 import org.scalatest.time.{Millis, Seconds, Span}
 import play.api.libs.json._
 import play.api.mvc.Results
@@ -84,7 +84,7 @@ class GenesisTest extends AnyFreeSpec with Matchers with Results with AttemptVal
       "executing the checkSetup action again" - {
         "should return setupCompleted: true when another node has inserted a user" in {
           userManagement.createUser(
-            DBUser("bob", Some("bob"), Some(BCryptPassword("bad-hash")), None, registered = false), UserPermissions(Set.empty)
+            unregisteredUserNo2fa("bob").dbUser, UserPermissions.default
           )
           val result = controllerWithNoUsers.checkSetup.apply(FakeRequest())
           val json = contentAsJson(result)

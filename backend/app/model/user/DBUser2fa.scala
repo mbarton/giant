@@ -50,15 +50,4 @@ object DBUser2fa {
     webAuthnPublicKeys = List.empty,
     webAuthnChallenge = Some(WebAuthn.Challenge.create(ssg))
   )
-
-  def fromNeo4jValue(user: Value): DBUser2fa = {
-    DBUser2fa(
-      activeTotpSecret = user.get("totpSecret").optionally(v => Base32Secret(v.asString)),
-      inactiveTotpSecret = user.get("inactiveTotpSecret").optionally(v => Base32Secret(v.asString)),
-      webAuthnUserHandle = user.get("webAuthnUserHandle").optionally(v => WebAuthn.UserHandle(WebAuthn.fromBase64(v.asString()))),
-      webAuthnPublicKeys = user.get("webAuthnPublicKeys").optionally(l =>
-        l.asList((v: Value) => Json.parse(v.asString()).as[WebAuthnPublicKey]).asScala.toList).getOrElse(List.empty),
-      webAuthnChallenge = user.get("webAuthnChallenge").optionally(v => WebAuthn.Challenge(WebAuthn.fromBase64(v.asString()))),
-    )
-  }
 }

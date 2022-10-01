@@ -37,7 +37,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       _ <- passwordValidator.validate(userData.password)
       tfa <- tfa.checkGenesisRegistration(userData.tfa, time)
       // We will immediately register after creating
-      user = DBUser(userData.username, None, None, invalidationTime = None, registered = false)
+      user = DBUser(userData.username, None, None, invalidationTime = None, registered = false, tfa)
       _ <- users.createUser(user, UserPermissions.bigBoss)
       registered <- users.registerUser(userData.username, userData.displayName, Some(encryptedPassword), Some(tfa))
     } yield registered.toPartial
@@ -50,21 +50,19 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       _ <- passwordValidator.validate(wholeUser.password)
       hash <- passwordHashing.hash(wholeUser.password)
       user <- users.createUser(
-          DBUser(wholeUser.username, Some("New User"), Some(hash), invalidationTime = None, registered = false),
+          DBUser(wholeUser.username, Some("New User"), Some(hash), invalidationTime = None, registered = false, DBUser2fa.initial(ssg, totp)),
         UserPermissions.default
       )
-      _ <- users.setUser2fa(user.username, DBUser2fa.initial(ssg, totp))
     } yield user.toPartial
   }
 
   override def registerUser(request: JsValue, time: Epoch): Attempt[Unit] = {
     for {
       userData <- request.validate[UserRegistration].toAttempt
-      _ <- passwordHashing.verifyUser(users.getUser(userData.username), userData.previousPassword, RequireNotRegistered)
+      user <- passwordHashing.verifyUser(users.getUser(userData.username), userData.previousPassword, RequireNotRegistered)
       _ <- passwordValidator.validate(userData.newPassword)
       newHash <- passwordHashing.hash(userData.newPassword)
-      initialTfa <- users.getUser2fa(userData.username)
-      tfa <- tfa.checkRegistration(initialTfa, userData.tfa, time)
+      tfa <- tfa.checkRegistration(user.tfa, userData.tfa, time)
       _ <- users.registerUser(userData.username, userData.displayName, Some(newHash), Some(tfa))
     } yield ()
   }
@@ -85,13 +83,11 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     user <- authenticateUser(request, time, AllowUnregistered, tfa.checkCanRegister)
     username = user.username
 
-    existingTfa <- users.getUser2fa(username)
+    inactiveTotpSecret = user.tfa.inactiveTotpSecret.getOrElse(ssg.createRandomSecret(totp.algorithm))
+    webAuthnUserHandle = user.tfa.webAuthnUserHandle.getOrElse(WebAuthn.UserHandle.create(ssg))
+    webAuthnChallenge = user.tfa.webAuthnChallenge.getOrElse(WebAuthn.Challenge.create(ssg))
 
-    inactiveTotpSecret = existingTfa.inactiveTotpSecret.getOrElse(ssg.createRandomSecret(totp.algorithm))
-    webAuthnUserHandle = existingTfa.webAuthnUserHandle.getOrElse(WebAuthn.UserHandle.create(ssg))
-    webAuthnChallenge = existingTfa.webAuthnChallenge.getOrElse(WebAuthn.Challenge.create(ssg))
-
-    newTfa = existingTfa.copy(
+    newTfa = user.tfa.copy(
       inactiveTotpSecret = Some(inactiveTotpSecret),
       webAuthnUserHandle = Some(webAuthnUserHandle),
       webAuthnChallenge = Some(webAuthnChallenge)
@@ -115,15 +111,14 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     user <- authenticateUser(request, time, RequireRegistered, TwoFactorAuth.NoCheck)
     username = user.username
 
-    user2fa <- users.getUser2fa(username)
-    user2faConfig <- buildAndSave2faConfiguration(username, user2fa)
+    user2faConfig <- buildAndSave2faConfiguration(username, user.tfa)
   } yield user2faConfig
 
   def register2faMethod(username: String, registration: TfaRegistration, time: Epoch): Attempt[Unit] = for {
-    before <- users.getUser2fa(username)
-    after <- tfa.checkRegistration(before, Some(registration), time)
+    user <- users.getUser(username)
+    tfa <- tfa.checkRegistration(user.tfa, Some(registration), time)
 
-    _ <- buildAndSave2faConfiguration(username, after)
+    _ <- buildAndSave2faConfiguration(username, tfa)
   } yield ()
 
   private def authenticateUser(request: Request[AnyContent], time: Epoch, check: RegistrationCheck, checkTfa: TwoFactorAuth.Check): Attempt[DBUser] = {
@@ -133,8 +128,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       password <- formData.get("password").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No password form parameter")))
       tfaChallengeResponse = formData.get("tfa").flatMap(_.headOption).map(TotpCodeChallengeResponse)
       dbUser <- passwordHashing.verifyUser(users.getUser(username), password, check)
-      tfa <- users.getUser2fa(username)
-      _ <- checkTfa(TwoFactorAuth.CheckParams(username, tfa, tfaChallengeResponse, time))
+      _ <- checkTfa(dbUser, tfaChallengeResponse, time)
     } yield dbUser
   }
 

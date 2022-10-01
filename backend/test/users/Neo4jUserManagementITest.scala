@@ -1,26 +1,24 @@
 package users
 
-import test.integration.Neo4jTestService
-import model.user.{BCryptPassword, DBUser, DBUser2fa, UserPermissions, WebAuthnPublicKey}
+import model.user._
 import org.scalamock.scalatest.MockFactory
+import org.scalatest.freespec.AnyFreeSpec
+import org.scalatest.matchers.should.Matchers
 import services.annotations.Annotations
 import services.index.{Index, Pages}
 import services.manifest.Neo4jManifest
 import services.users.Neo4jUserManagement
-import test.fixtures.GoogleAuthenticator
+import test.TestUserManagement
+import test.integration.Neo4jTestService
 import utils.Logging
+import utils.auth.totp.{SecureSecretGenerator, Totp}
 
 import scala.concurrent.ExecutionContext.Implicits.global
-import org.scalatest.freespec.AnyFreeSpec
-import org.scalatest.matchers.should.Matchers
-import utils.attempt.Attempt
-import utils.auth.totp.{SecureSecretGenerator, Totp}
-import utils.auth.webauthn.WebAuthn
 
 class Neo4jUserManagementITest extends AnyFreeSpec with Matchers with Neo4jTestService with Logging with MockFactory {
   "Neo4JUserManagement" - {
-    val user = DBUser("test", displayName = None, password = None, Some(1234), registered = false)
-    val user2 = DBUser("test2", displayName = None, password = None, Some(1234), registered = false)
+    val user = TestUserManagement.unregisteredUserNo2fa("test").dbUser
+    val user2 = TestUserManagement.unregisteredUserNo2fa("test2").dbUser
 
     val permissions = UserPermissions.bigBoss
 
@@ -60,7 +58,7 @@ class Neo4jUserManagementITest extends AnyFreeSpec with Matchers with Neo4jTestS
 
         users.setUser2fa(username, before).successValue
 
-        val after = users.getUser2fa(username).successValue
+        val after = users.getUser(username).successValue.tfa
 
         after.activeTotpSecret shouldBe empty
         after.inactiveTotpSecret should contain(before.inactiveTotpSecret.get)
@@ -81,7 +79,7 @@ class Neo4jUserManagementITest extends AnyFreeSpec with Matchers with Neo4jTestS
 
         users.setUser2fa(username, before).successValue
 
-        val after = users.getUser2fa(username).successValue
+        val after = users.getUser(username).successValue.tfa
         val keysAfter = after.webAuthnPublicKeys.toSet
 
         keysAfter should contain only(key1, key2)
@@ -99,8 +97,8 @@ class Neo4jUserManagementITest extends AnyFreeSpec with Matchers with Neo4jTestS
         users.setUser2fa(user.username, user1TfaBefore).successValue
         users.setUser2fa(user2.username, user2TfaBefore).successValue
 
-        val user1TfaAfter = users.getUser2fa(user.username).successValue
-        val user2TfaAfter = users.getUser2fa(user2.username).successValue
+        val user1TfaAfter = users.getUser(user.username).successValue.tfa
+        val user2TfaAfter = users.getUser(user2.username).successValue.tfa
 
         user1TfaAfter shouldBe user1TfaBefore
         user2TfaAfter shouldBe user2TfaBefore

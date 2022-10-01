@@ -140,7 +140,7 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
         val result = userProvider.createUser("bob", Json.toJson(NewUser("bob", testPassword)))
         result.successValue shouldBe PartialUser("bob", "New User")
 
-        val inactiveTotpSecret = users.getUser2fa("bob").successValue.inactiveTotpSecret
+        val inactiveTotpSecret = users.getUser("bob").successValue.tfa.inactiveTotpSecret
         inactiveTotpSecret should not be empty
 
         val tfaParams = userProvider.get2faRegistrationParameters(
@@ -276,7 +276,7 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
 
       "returns existing inactive totp secret" in {
         val (userProvider, users) = makeUserProvider(require2fa = true, unregisteredUserNo2fa("bob"))
-        val inactiveTotpSecret = users.getUser2fa("bob").successValue.inactiveTotpSecret
+        val inactiveTotpSecret = users.getUser("bob").successValue.tfa.inactiveTotpSecret
 
         inactiveTotpSecret should not be empty
 
@@ -286,20 +286,20 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
 
       "generates inactive totp secret if the user doesn't already have one" in {
         val baseUser = unregisteredUserNo2fa("bob")
-        val user = baseUser.copy(tfa = baseUser.tfa.copy(inactiveTotpSecret = None))
+        val user = baseUser.copy(dbUser = baseUser.dbUser.copy(tfa = baseUser.dbUser.tfa.copy(inactiveTotpSecret = None)))
 
         val (userProvider, users) = makeUserProvider(require2fa = true, user)
 
         val result = userProvider.get2faRegistrationParameters(formParams("bob", testPassword), sampleEpoch, "giant")
         result.successValue.totpSecret should not be empty
 
-        val stored2fa = users.getUser2fa("bob").successValue
+        val stored2fa = users.getUser("bob").successValue.tfa
         stored2fa.inactiveTotpSecret should contain(Base32Secret(result.successValue.totpSecret))
       }
 
       "returns existing webauthn user handle" in {
         val (userProvider, users) = makeUserProvider(require2fa = true, unregisteredUserNo2fa("bob"))
-        val webAuthnUserHandle = users.getUser2fa("bob").successValue.webAuthnUserHandle
+        val webAuthnUserHandle = users.getUser("bob").successValue.tfa.webAuthnUserHandle
 
         webAuthnUserHandle should not be empty
 
@@ -309,20 +309,21 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
 
       "generates webauthn user handle if the user doesn't already have one" in {
         val baseUser = unregisteredUserNo2fa("bob")
-        val user: TestUserRegistration = baseUser.copy(tfa = baseUser.tfa.copy(webAuthnUserHandle = None))
+        val user: TestUserRegistration = baseUser.copy(dbUser = baseUser.dbUser.copy(
+          tfa = baseUser.dbUser.tfa.copy(webAuthnUserHandle = None)))
 
         val (userProvider, users) = makeUserProvider(require2fa = true, user)
 
         val result = userProvider.get2faRegistrationParameters(formParams("bob", testPassword), sampleEpoch, "giant")
         val webAuthnUserHandle = result.successValue.webAuthnUserHandle
 
-        val stored2fa = users.getUser2fa("bob").successValue
+        val stored2fa = users.getUser("bob").successValue.tfa
         WebAuthn.toBase64(stored2fa.webAuthnUserHandle.get.data) shouldBe webAuthnUserHandle
       }
 
       "returns existing webauthn challenge" in {
         val (userProvider, users) = makeUserProvider(require2fa = true, unregisteredUserNo2fa("bob"))
-        val webAuthnUserHandle = users.getUser2fa("bob").successValue.webAuthnUserHandle
+        val webAuthnUserHandle = users.getUser("bob").successValue.tfa.webAuthnUserHandle
 
         webAuthnUserHandle should not be empty
 
@@ -332,14 +333,15 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
 
       "generates webauthn challenge if the user doesn't already have one" in {
         val baseUser = unregisteredUserNo2fa("bob")
-        val user: TestUserRegistration = baseUser.copy(tfa = baseUser.tfa.copy(webAuthnChallenge = None))
+        val user: TestUserRegistration = baseUser.copy(dbUser = baseUser.dbUser.copy(
+          tfa = baseUser.dbUser.tfa.copy(webAuthnChallenge = None)))
 
         val (userProvider, users) = makeUserProvider(require2fa = true, user)
 
         val result = userProvider.get2faRegistrationParameters(formParams("bob", testPassword), sampleEpoch, "giant")
         val webAuthnChallenge = result.successValue.webAuthnChallenge
 
-        val stored2fa = users.getUser2fa("bob").successValue
+        val stored2fa = users.getUser("bob").successValue.tfa
         WebAuthn.toBase64(stored2fa.webAuthnChallenge.get.data) shouldBe webAuthnChallenge
       }
     }
@@ -384,7 +386,7 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
 
         second.webAuthnChallenge should not be(first.webAuthnChallenge)
 
-        val challenge = users.getUser2fa("bob").successValue.webAuthnChallenge
+        val challenge = users.getUser("bob").successValue.tfa.webAuthnChallenge
         challenge should not be empty
 
         second.webAuthnChallenge shouldBe WebAuthn.toBase64(challenge.get.data)
@@ -398,19 +400,19 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
         val result = userProvider.register2faMethod("bob", TotpCodeRegistration(sampleAnswer), sampleEpoch)
         result.successValue
 
-        users.getUser2fa("bob").successValue.activeTotpSecret should not be empty
+        users.getUser("bob").successValue.tfa.activeTotpSecret should not be empty
       }
 
       "update totp code for existing user" in {
         val (userProvider, users) = makeUserProvider(require2fa = true, registeredUserTotp("bob"))
 
-        val inactiveTotpSecret = users.getUser2fa("bob").successValue.inactiveTotpSecret.get
+        val inactiveTotpSecret = users.getUser("bob").successValue.tfa.inactiveTotpSecret.get
         val code = Totp.googleAuthenticatorInstance().generateList(inactiveTotpSecret, sampleEpoch)(scala.concurrent.ExecutionContext.global).successValue.head
 
         val result = userProvider.register2faMethod("bob", TotpCodeRegistration(code), sampleEpoch)
         result.successValue
 
-        users.getUser2fa("bob").successValue.activeTotpSecret should contain(inactiveTotpSecret)
+        users.getUser("bob").successValue.tfa.activeTotpSecret should contain(inactiveTotpSecret)
       }
     }
 

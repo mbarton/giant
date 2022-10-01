@@ -15,7 +15,7 @@ import utils.auth.webauthn.WebAuthn
 
 import scala.concurrent.ExecutionContext.Implicits.global
 
-case class TestUserRegistration(dbUser: DBUser, permissions: UserPermissions, collections: List[Collection], tfa: DBUser2fa) {
+case class TestUserRegistration(dbUser: DBUser, permissions: UserPermissions, collections: List[Collection]) {
   def username: String = dbUser.username
 }
 
@@ -64,17 +64,17 @@ object TestUserManagement {
       displayName = displayName,
       password = Some(testPasswordHashed),
       invalidationTime = None,
-      registered = true
+      registered = true,
+      tfa = DBUser2fa(
+        activeTotpSecret = None,
+        inactiveTotpSecret = Some(sampleSecret),
+        webAuthnUserHandle = Some(WebAuthn.UserHandle.create(ssg)),
+        webAuthnPublicKeys = List.empty,
+        webAuthnChallenge = Some(WebAuthn.Challenge.create(ssg))
+      )
     ),
     permissions,
-    collections,
-    tfa = DBUser2fa(
-      activeTotpSecret = None,
-      inactiveTotpSecret = Some(sampleSecret),
-      webAuthnUserHandle = Some(WebAuthn.UserHandle.create(ssg)),
-      webAuthnPublicKeys = List.empty,
-      webAuthnChallenge = Some(WebAuthn.Challenge.create(ssg))
-    )
+    collections
   )
 
   def unregisteredUserNo2fa(username: String): TestUserRegistration = {
@@ -85,7 +85,7 @@ object TestUserManagement {
   def registeredUserTotp(username: String, displayName: Option[String] = None, permissions: UserPermissions = UserPermissions.default,
                          collections: List[Collection] = List.empty): TestUserRegistration = {
     val initial = registeredUserNo2fa(username, displayName, permissions, collections)
-    initial.copy(tfa = initial.tfa.copy(activeTotpSecret = Some(sampleSecret)))
+    initial.copy(dbUser = initial.dbUser.copy(tfa = initial.dbUser.tfa.copy(activeTotpSecret = Some(sampleSecret))))
   }
 
   def unregisteredUser2fa(username: String): TestUserRegistration = {
@@ -106,11 +106,11 @@ class TestUserManagement(initialUsers: TestUserManagement.Storage) extends UserM
   override def listUsers(): Attempt[List[(DBUser, List[Collection])]] = Attempt.Right {
     users.values.toList
       .sortBy(_.username)
-      .map { case TestUserRegistration(dbUser, _, collections, _) => dbUser -> collections }
+      .map { case TestUserRegistration(dbUser, _, collections) => dbUser -> collections }
   }
 
   def listUsersWithPermission(permission: UserPermission): Attempt[List[DBUser]] = Attempt.Right {
-    users.values.toList.collect { case TestUserRegistration(dbUser, permissions, _, _) if permissions.hasPermission(permission) => dbUser }
+    users.values.toList.collect { case TestUserRegistration(dbUser, permissions, _) if permissions.hasPermission(permission) => dbUser }
   }
 
   override def getPermissions(username: String): Attempt[UserPermissions] = {
@@ -123,7 +123,7 @@ class TestUserManagement(initialUsers: TestUserManagement.Storage) extends UserM
   }
 
   override def createUser(u: user.DBUser, p: user.UserPermissions): Attempt[DBUser] = {
-    users = users + (u.username -> TestUserRegistration(u, p, List.empty, DBUser2fa.empty))
+    users = users + (u.username -> TestUserRegistration(u, p, List.empty))
     Attempt.Right(u)
   }
 
@@ -142,7 +142,7 @@ class TestUserManagement(initialUsers: TestUserManagement.Storage) extends UserM
   }
 
   def getAllCollectionUrisAndUsernames(): Attempt[Map[String, Set[String]]] = Attempt.Right {
-    users.foldLeft(Map.empty[String, Set[String]]) { case (acc, (username, TestUserRegistration(_, _, collections, _))) =>
+    users.foldLeft(Map.empty[String, Set[String]]) { case (acc, (username, TestUserRegistration(_, _, collections))) =>
       collections.foldLeft(acc) { (acc, collection) =>
         val before = acc.getOrElse(collection.uri.value, Set.empty)
         val after = before + username
@@ -154,12 +154,12 @@ class TestUserManagement(initialUsers: TestUserManagement.Storage) extends UserM
 
   override def getUsersForCollection(collectionUri: String): Attempt[Set[String]] = Attempt.Right {
     users.collect {
-      case (username, TestUserRegistration(_, _, collections, _)) if collections.exists(_.uri.value == collectionUri) => username
+      case (username, TestUserRegistration(_, _, collections)) if collections.exists(_.uri.value == collectionUri) => username
     }.toSet
   }
 
   override def getVisibleCollectionUrisForUser(username: String): Attempt[Set[String]] = {
-    users.get(username).toAttempt(Attempt.Left(UserDoesNotExistFailure(username))).map { case TestUserRegistration(_, _, colls, _) =>
+    users.get(username).toAttempt(Attempt.Left(UserDoesNotExistFailure(username))).map { case TestUserRegistration(_, _, colls) =>
       colls.map(_.uri.value).toSet
     }
   }
@@ -172,19 +172,16 @@ class TestUserManagement(initialUsers: TestUserManagement.Storage) extends UserM
       dbUser = r.dbUser.copy(
         password = password,
         displayName = Some(displayName),
-        registered = true
+        registered = true,
+        tfa = tfa.getOrElse(r.dbUser.tfa)
       ),
-      tfa = tfa.getOrElse(r.tfa)
     )).map(r => r.dbUser)
 
   override def setPermissions(username: String, permissions: UserPermissions): Attempt[Unit] =
     updateField(username, r => r.copy(permissions = permissions)).map(_ => ())
 
-  override def getUser2fa(username: String): Attempt[DBUser2fa] =
-    users.get(username).toAttempt(Attempt.Left(UserDoesNotExistFailure(username))).map(_.tfa)
-
   override def setUser2fa(username: String, tfa: DBUser2fa): Attempt[Unit] =
-    updateField(username, r => r.copy(tfa = tfa)).map(_ => ())
+    updateField(username, r => r.copy(dbUser = r.dbUser.copy(tfa = tfa))).map(_ => ())
 
   private def updateField(username: String, f: TestUserRegistration => TestUserRegistration): Attempt[TestUserRegistration] = {
     val maybeUpdatedUser = users

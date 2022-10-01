@@ -11,7 +11,7 @@ import extraction.MimeTypeMapper
 import model.annotations.{Workspace, WorkspaceEntry, WorkspaceMetadata}
 import model.frontend.{Filter, SearchResults, TreeEntry, TreeNode}
 import model.manifest.{Blob, Collection, CollectionWithUsers}
-import model.user.{BCryptPassword, DBUser, UserPermissions}
+import model.user.{BCryptPassword, DBUser, DBUser2fa, UserPermissions}
 import model.{CreateCollectionRequest, CreateIngestionRequest, English, Uri}
 import org.apache.xerces.xni.XMLResourceIdentifier
 import org.neo4j.driver.v1.Driver
@@ -27,7 +27,7 @@ import services.manifest.Neo4jManifest
 import services.users.{Neo4jUserManagement, UserManagement}
 import services.{BucketConfig, Neo4jQueryLoggingConfig, S3Config, TestTypeDetector}
 import test.integration.Helpers.BlobAndNodeId
-import test.{TestAuthActionBuilder, TestObjectStorage, TestPreviewService}
+import test.{TestAuthActionBuilder, TestObjectStorage, TestPreviewService, TestUserManagement}
 import utils.attempt.AttemptAwait._
 import utils.auth.User
 import utils.controller.{AuthControllerComponents, DefaultFailureToResultMapper}
@@ -244,7 +244,7 @@ object Helpers extends Matchers with Logging with OptionValues with Inside {
     val userManagement = Neo4jUserManagement(neo4jDriver, ec, queryLoggingConfig, manifest, elasticsearch.elasticResources, elasticsearch.elasticPages, annotations)
 
     usernames.map { username =>
-      val user = DBUser(username, Some(username), Some(BCryptPassword("invalid")), None, registered = true)
+      val user = TestUserManagement.registeredUserNo2fa(username).dbUser
       val permissions = if(admins.contains(username)) { UserPermissions.bigBoss } else { UserPermissions.default }
       userManagement.createUser(user, permissions).await()
 

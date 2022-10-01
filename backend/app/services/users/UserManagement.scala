@@ -24,7 +24,6 @@ trait UserManagement {
   def addUserCollection(user: String, collection: String): Attempt[Unit]
   def removeUserCollection(user: String, collection: String): Attempt[Unit]
   def setPermissions(user: String, permissions: UserPermissions): Attempt[Unit]
-  def getUser2fa(user: String): Attempt[DBUser2fa]
   def setUser2fa(user: String, tfa: DBUser2fa): Attempt[Unit]
   def canSeeCollection(user: String, collection: Uri)(implicit ec: ExecutionContext): Attempt[Boolean] =
     getVisibleCollectionUrisForUser(user).map(_.contains(collection.value))
