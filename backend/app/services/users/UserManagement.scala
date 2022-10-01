@@ -12,7 +12,7 @@ trait UserManagement {
   def listUsersWithPermission(permission: UserPermission): Attempt[List[DBUser]]
   def getPermissions(username: String): Attempt[UserPermissions]
   def createUser(user: DBUser, permissions: UserPermissions): Attempt[DBUser]
-  def registerUser(username: String, displayName: String, password: Option[BCryptPassword]): Attempt[DBUser]
+  def registerUser(username: String, displayName: String, password: Option[BCryptPassword], tfa: Option[DBUser2fa]): Attempt[DBUser]
   def updateUserDisplayName(username: String, displayName: String): Attempt[DBUser]
   def updateUserPassword(username: String, password: BCryptPassword): Attempt[DBUser]
   def getUser(username: String): Attempt[DBUser]

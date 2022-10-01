@@ -135,22 +135,25 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
     }
   }
 
-  override def registerUser(username: String, displayName: String, password: Option[BCryptPassword]): Attempt[DBUser] = attemptTransaction { tx =>
+  override def registerUser(username: String, displayName: String, password: Option[BCryptPassword], tfa: Option[DBUser2fa]): Attempt[DBUser] = attemptTransaction { tx =>
     for {
-      user <- updateUser(username, "displayName" -> displayName,
+      user <- updateUserInTransaction(tx, username, "displayName" -> displayName,
         "password" -> password.map(_.hash).orNull,
         "registered" -> true)
+      _ <- tfa.map(setUser2faInTransaction(tx, username, _)).getOrElse(Attempt.Right(()))
       _ <- createDefaultUserResources(user.toPartial)
     } yield {
       user
     }
   }
 
-  override def updateUserDisplayName(username: String, displayName: String): Attempt[DBUser] =
-    updateUser(username, "displayName" -> displayName)
+  override def updateUserDisplayName(username: String, displayName: String): Attempt[DBUser] = attemptTransaction { tx =>
+    updateUserInTransaction(tx, username, "displayName" -> displayName)
+  }
 
-  override def updateUserPassword(username: String, password: BCryptPassword): Attempt[DBUser] =
-    updateUser(username, "password" -> password.hash)
+  override def updateUserPassword(username: String, password: BCryptPassword): Attempt[DBUser] = attemptTransaction { tx =>
+    updateUserInTransaction(tx, username, "password" -> password.hash)
+  }
 
   override def getUser(username: String): Attempt[DBUser] = attemptTransaction { tx =>
     val attemptedResult = tx.run(
@@ -316,23 +319,7 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
   // TODO MRB: it's probably safer to mark older keys as unused rather than delete them
   // TODO MRB: should we split out add/remove key to separate operations?
   override def setUser2fa(username: String, tfa: DBUser2fa): Attempt[Unit] = attemptTransaction { tx =>
-    // The active totp secret field is called totpSecret for backwards compatibility with versions of Giant
-    // that only supported totp before webauthn was introduced
-    tx.run("""
-      MATCH(user: User {username: {username} })
-      SET user.totpSecret = {activeTotpSecret}
-      SET user.inactiveTotpSecret = {inactiveTotpSecret}
-      SET user.webAuthnUserHandle = {webAuthnUserHandle}
-      SET user.webAuthnChallenge = {webAuthnChallenge}
-      SET user.webAuthnPublicKeys = {webAuthnPublicKeys}
-    """, parameters(
-      "username", username,
-      "activeTotpSecret", tfa.activeTotpSecret.map(_.toBase32).orNull,
-      "inactiveTotpSecret", tfa.inactiveTotpSecret.map(_.toBase32).orNull,
-      "webAuthnUserHandle", tfa.webAuthnUserHandle.map(v => WebAuthn.toBase64(v.data)).orNull,
-      "webAuthnChallenge", tfa.webAuthnChallenge.map(v => WebAuthn.toBase64(v.data)).orNull,
-      "webAuthnPublicKeys", tfa.webAuthnPublicKeys.map(k => Json.stringify(Json.toJson(k))).asJava
-    )).map(_ => ())
+    setUser2faInTransaction(tx, username, tfa)
   }
 
   private def singleUser(username: String, statementResult: StatementResult, field: String = "user"): Attempt[DBUser] = {
@@ -416,7 +403,7 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
     }
   }
 
-  private def updateUser(username: String, fields: (String, Any)*): Attempt[DBUser] = attemptTransaction { tx =>
+  private def updateUserInTransaction(tx: AttemptWrappedTransaction, username: String, fields: (String, Any)*): Attempt[DBUser] = {
     val setStatements = fields.map { case (fieldName, _) =>
       s"SET user.$fieldName = {$fieldName}"
     }
@@ -436,5 +423,27 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
       result <- attemptedResult
       user <- singleUser(username, result)
     } yield user
+  }
+
+  private def setUser2faInTransaction(tx: AttemptWrappedTransaction, username: String, tfa: DBUser2fa): Attempt[Unit] = {
+    // The active totp secret field is called totpSecret for backwards compatibility with versions of Giant
+    // that only supported totp before webauthn was introduced
+
+    tx.run(
+      """
+      MATCH(user: User {username: {username} })
+      SET user.totpSecret = {activeTotpSecret}
+      SET user.inactiveTotpSecret = {inactiveTotpSecret}
+      SET user.webAuthnUserHandle = {webAuthnUserHandle}
+      SET user.webAuthnChallenge = {webAuthnChallenge}
+      SET user.webAuthnPublicKeys = {webAuthnPublicKeys}
+    """, parameters(
+        "username", username,
+        "activeTotpSecret", tfa.activeTotpSecret.map(_.toBase32).orNull,
+        "inactiveTotpSecret", tfa.inactiveTotpSecret.map(_.toBase32).orNull,
+        "webAuthnUserHandle", tfa.webAuthnUserHandle.map(v => WebAuthn.toBase64(v.data)).orNull,
+        "webAuthnChallenge", tfa.webAuthnChallenge.map(v => WebAuthn.toBase64(v.data)).orNull,
+        "webAuthnPublicKeys", tfa.webAuthnPublicKeys.map(k => Json.stringify(Json.toJson(k))).asJava
+      )).map(_ => ())
   }
 }

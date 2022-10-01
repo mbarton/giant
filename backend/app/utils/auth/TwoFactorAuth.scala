@@ -1,65 +1,78 @@
 package utils.auth
 
-import model.frontend.user.{TfaChallengeResponse, TotpCodeChallengeResponse}
-import model.user.{DBUser, DBUser2fa}
-import services.users.UserManagement
-import utils.attempt.{Attempt, LoginFailure, MisconfiguredAccount, SecondFactorRequired}
-import utils.auth.totp.Totp
+import model.frontend.user.{TfaChallengeResponse, TfaRegistration, TotpCodeChallengeResponse, TotpCodeRegistration}
+import model.user.DBUser2fa
+import utils.attempt.{Attempt, LoginFailure, MisconfiguredAccount, SecondFactorRequired, UnknownFailure}
+import utils.auth.totp.{SecureSecretGenerator, Totp}
 import utils.{Epoch, Logging}
 
 import scala.concurrent.ExecutionContext
 
 object TwoFactorAuth {
-  type Check = (String, Option[TfaChallengeResponse], Epoch) => Attempt[Unit]
+  case class CheckParams(username: String, tfa: DBUser2fa, challengeResponse: Option[TfaChallengeResponse], time: Epoch)
+  type Check = CheckParams => Attempt[Unit]
 
-  val NoCheck: Check = (_: String, _: Option[TfaChallengeResponse], _: Epoch) => Attempt.Right(())
+  val NoCheck: Check = (_: CheckParams) => Attempt.Right(())
 }
 
-class TwoFactorAuth(require2fa: Boolean, totp: Totp, users: UserManagement)(implicit ec: ExecutionContext) extends Logging {
-  def check2fa(username: String, challengeResponse: Option[TfaChallengeResponse], time: Epoch): Attempt[Unit] = {
-    getUserData(username, challengeResponse).flatMap {
-      case (user2fa, _) if require2fa && !user2fa.hasMethodRegistered =>
-        Attempt.Left(SecondFactorRequired("2FA enrollment is required"))
+class TwoFactorAuth(require2fa: Boolean, totp: Totp, ssg: SecureSecretGenerator)(implicit ec: ExecutionContext) extends Logging {
+  import TwoFactorAuth._
 
-      case (user2fa, None) if require2fa || user2fa.hasMethodRegistered =>
-        Attempt.Left(SecondFactorRequired("2FA code required"))
+  def check2fa: Check = {
+    case CheckParams(_, user2fa, _, _) if require2fa && !user2fa.hasMethodRegistered =>
+      Attempt.Left(SecondFactorRequired("2FA enrollment is required"))
 
-      case (_, None) if !require2fa =>
-        Attempt.Right(())
+    case CheckParams(_, user2fa, None, _) if require2fa || user2fa.hasMethodRegistered =>
+      Attempt.Left(SecondFactorRequired("2FA code required"))
 
-      case (user2fa, Some(TotpCodeChallengeResponse(_))) if user2fa.activeTotpSecret.isEmpty =>
-        Attempt.Left(LoginFailure("User not enrolled for TOTP"))
+    case CheckParams(_, _, None, _) if !require2fa =>
+      Attempt.Right(())
 
-      case (user2fa, Some(TotpCodeChallengeResponse(code))) if user2fa.activeTotpSecret.nonEmpty =>
-        totp.checkCodeFatal(user2fa.activeTotpSecret.get, code, time)
+    case CheckParams(_, user2fa, Some(TotpCodeChallengeResponse(_)), _) if user2fa.activeTotpSecret.isEmpty =>
+      Attempt.Left(LoginFailure("User not enrolled for TOTP"))
 
-      case (user2fa, challengeResponse) =>
-        logger.warn(s"${username} failed 2fa. registered: require2fa: ${require2fa}. activeTotpSecret: ${user2fa.activeTotpSecret.nonEmpty}. challengeResponse: ${challengeResponse.map(_.getClass.getName).getOrElse("None")}")
-        Attempt.Left(SecondFactorRequired("Could not validate 2FA"))
-    }
+    case CheckParams(_, user2fa, Some(TotpCodeChallengeResponse(code)), time) if user2fa.activeTotpSecret.nonEmpty =>
+      totp.checkCodeFatal(user2fa.activeTotpSecret.get, code, time)
+
+    case CheckParams(username, user2fa, challengeResponse, _) =>
+      logger.warn(s"${username} failed 2fa. registered: require2fa: ${require2fa}. activeTotpSecret: ${user2fa.activeTotpSecret.nonEmpty}. challengeResponse: ${challengeResponse.map(_.getClass.getName).getOrElse("None")}")
+      Attempt.Left(SecondFactorRequired("Could not validate 2FA"))
   }
 
-  def checkCanRegister(username: String, challengeResponse: Option[TfaChallengeResponse], time: Epoch): Attempt[Unit] = {
-    getUserData(username, challengeResponse).flatMap {
-      case (user2fa, None) if user2fa.hasMethodRegistered =>
-        Attempt.Left(SecondFactorRequired("2FA code required"))
+  def canRegister: Check = {
+    case CheckParams(_, user2fa, None, _) if user2fa.hasMethodRegistered =>
+      Attempt.Left(SecondFactorRequired("2FA code required"))
 
-      case (user2fa, Some(TotpCodeChallengeResponse(_))) if user2fa.inactiveTotpSecret.isEmpty =>
-        Attempt.Left(MisconfiguredAccount("Missing inactive TOTP secret"))
+    case CheckParams(_, user2fa, Some(TotpCodeChallengeResponse(_)), _) if user2fa.inactiveTotpSecret.isEmpty =>
+      Attempt.Left(MisconfiguredAccount("Missing inactive TOTP secret"))
 
-      case (user2fa, Some(TotpCodeChallengeResponse(code))) if user2fa.activeTotpSecret.nonEmpty =>
-        totp.checkCodeFatal(user2fa.activeTotpSecret.get, code, time)
+    case CheckParams(_, user2fa, Some(TotpCodeChallengeResponse(code)), time) if user2fa.activeTotpSecret.nonEmpty =>
+      totp.checkCodeFatal(user2fa.activeTotpSecret.get, code, time)
 
-      case (user2fa, None) if !user2fa.hasMethodRegistered =>
-        Attempt.Right(())
+    case CheckParams(_, user2fa, None, _) if !user2fa.hasMethodRegistered =>
+      Attempt.Right(())
 
-      case (user2fa, challengeResponse) =>
-        logger.warn(s"${username} failed check to register 2fa. require2fa: ${require2fa}. activeTotpSecret: ${user2fa.activeTotpSecret.nonEmpty}. challengeResponse: ${challengeResponse.map(_.getClass.getName).getOrElse("None")}")
-        Attempt.Left(SecondFactorRequired("Could not validate 2FA"))
-    }
+    case CheckParams(username, user2fa, challengeResponse, _) =>
+      logger.warn(s"${username} failed check to register 2fa. require2fa: ${require2fa}. activeTotpSecret: ${user2fa.activeTotpSecret.nonEmpty}. challengeResponse: ${challengeResponse.map(_.getClass.getName).getOrElse("None")}")
+      Attempt.Left(SecondFactorRequired("Could not validate 2FA"))
   }
 
-  private def getUserData(username: String, challengeResponse: Option[TfaChallengeResponse]): Attempt[(DBUser2fa, Option[TfaChallengeResponse])] = for {
-    tfa <- users.getUser2fa(username)
-  } yield (tfa, challengeResponse)
+  def checkRegistration(user2fa: DBUser2fa, registration: Option[TfaRegistration], time: Epoch): Attempt[DBUser2fa] = registration match {
+    case None if !require2fa =>
+      Attempt.Right(user2fa)
+
+    case Some(TotpCodeRegistration(code)) =>
+      for {
+        secret <- Attempt.fromOption(user2fa.inactiveTotpSecret, Attempt.Left(UnknownFailure(new IllegalStateException("Missing inactiveTotpSecret"))))
+        _ <- totp.checkCodeFatal(secret, code, time)
+      } yield {
+        user2fa.copy(
+          activeTotpSecret = Some(secret),
+          inactiveTotpSecret = Some(ssg.createRandomSecret(totp.algorithm))
+        )
+      }
+
+    case _ =>
+      ???
+  }
 }

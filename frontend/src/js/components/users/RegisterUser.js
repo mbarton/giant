@@ -60,23 +60,53 @@ export class RegisterUser extends React.Component {
         return errors;
     }
 
-    submit = (username, previousPassword, displayName, newPassword, totpActivation) => {
-        this.setState({ requesting: true });
+    registerUser = (username, previousPassword, displayName, newPassword, tfaCode) => {
+        const body = {
+            username: username,
+            previousPassword: previousPassword,
+            displayName: displayName,
+            newPassword: newPassword
+        };
+
+        if(tfaCode) {
+            body.tfa = tfaCode;
+        }
 
         fetch('/api/users/' + username + '/register', {
             headers: new Headers({'Content-Type': 'application/json'}),
             method: 'PUT',
-            body: JSON.stringify({
-                username: username,
-                previousPassword: previousPassword,
-                displayName: displayName,
-                newPassword: newPassword,
-                totpActivation: totpActivation
-            })
+            body: JSON.stringify(body)
         }).then(r => {
             if(r.status === 204) {
                 this.props.onComplete();
-            } else if (r.status === 400) {
+            } else {
+                // Unauthenticated, go back to first page
+                this.setState({ requesting: false, hasCompletedPhase1: false, username: '', previousPassword: '' });
+                this.props.onError('Bad login credentials, please check your username and previous password');
+            }
+        }).catch(() => {
+            this.setState({ requesting: false });
+        });
+    }
+
+    submit = (username, previousPassword, displayName, newPassword, tfaCode) => {
+        this.setState({ requesting: true });
+
+        const tfaRegistrationBody = new URLSearchParams();
+        tfaRegistrationBody.append('username', username);
+        tfaRegistrationBody.append('password', previousPassword);
+
+        if(tfaCode) {
+            tfaRegistrationBody.append('tfaRegistration', JSON.stringify({ type: 'totp', code: tfaCode }));
+        }
+
+        fetch('/api/auth/2fa/registration', {
+            method: 'POST',
+            body: tfaRegistrationBody
+        }).then(r => {
+            if(r.status === 200) {
+                this.registerUser(username, previousPassword, displayName, newPassword, tfaCode);
+            } else if(r.status === 400) {
                 // Bad TFA token
                 this.setState({ requesting: false, tfaCode: '' });
                 this.props.onError('Bad authentication code, please retry');
@@ -85,8 +115,6 @@ export class RegisterUser extends React.Component {
                 this.setState({ requesting: false, hasCompletedPhase1: false, username: '', previousPassword: '' });
                 this.props.onError('Bad login credentials, please check your username and previous password');
             }
-        }).catch(() => {
-            this.setState({ requesting: false });
         });
     }
 
@@ -100,16 +128,11 @@ export class RegisterUser extends React.Component {
                 .then(res => this.setState({url: res.totpUrl, secret: res.totpSecret, hasCompletedPhase1: true}));
 
         } else if (this.state.hasCompletedPhase1 && this.canFinish()) {
-            const totpActivation = {
-                secret: this.state.secret,
-                code: this.state.tfaCode
-            };
-
             this.submit(this.state.username,
                 this.state.previousPassword,
                 this.state.displayName,
                 this.state.newPassword,
-                totpActivation);
+                this.state.tfaCode);
         }
     };
 

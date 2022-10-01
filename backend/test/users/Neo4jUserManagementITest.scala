@@ -42,7 +42,7 @@ class Neo4jUserManagementITest extends AnyFreeSpec with Matchers with Neo4jTestS
       )
 
       new TestSetup {
-        users.registerUser(user.username, displayName, password).successValue shouldBe expected
+        users.registerUser(user.username, displayName, password, None).successValue shouldBe expected
         users.getVisibleCollectionUrisForUser(user.username).successValue should be(Set(s"$displayName Documents"))
       }
     }

@@ -40,7 +40,7 @@ class GenesisTest extends AnyFreeSpec with Matchers with Results with AttemptVal
 
       "executing the doSetup action" - {
         "should enforce the minimum password length" in {
-          val body: JsValue = Json.toJson(NewGenesisUser("bob", "Spongebob", "a"))
+          val body: JsValue = Json.toJson(NewGenesisUser("bob", "Spongebob", "a", None))
           val result = controllerWithNoUsers.doSetup().apply(FakeRequest().withBody(body))
           val string = contentAsString(result)
           string shouldBe "Provided password too short, must be at least 8 characters"
@@ -49,7 +49,7 @@ class GenesisTest extends AnyFreeSpec with Matchers with Results with AttemptVal
         }
 
         "should create a user" in {
-          val body: JsValue = Json.toJson(NewGenesisUser("bob", "Spongebob", "bobs-password"))
+          val body: JsValue = Json.toJson(NewGenesisUser("bob", "Spongebob", "bobs-password", None))
           val result = controllerWithNoUsers.doSetup().apply(FakeRequest().withBody(body))
           val json = contentAsJson(result)
           json.as[PartialUser] shouldBe PartialUser("bob", "Spongebob")

@@ -35,10 +35,12 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       userData <- request.validate[NewGenesisUser].toAttempt
       encryptedPassword <- passwordHashing.hash(userData.password)
       _ <- passwordValidator.validate(userData.password)
+      initialTfa <- users.getUser2fa(userData.username)
+      tfa <- tfa.checkRegistration(initialTfa, userData.tfa, time)
       // We will immediately register after creating
       user = DBUser(userData.username, None, None, invalidationTime = None, registered = false)
-      created <- users.createUser(user, UserPermissions.bigBoss)
-      registered <- users.registerUser(userData.username, userData.displayName, Some(encryptedPassword))
+      _ <- users.createUser(user, UserPermissions.bigBoss)
+      registered <- users.registerUser(userData.username, userData.displayName, Some(encryptedPassword), Some(tfa))
     } yield registered.toPartial
   }
 
@@ -62,8 +64,9 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       _ <- passwordHashing.verifyUser(users.getUser(userData.username), userData.previousPassword, RequireNotRegistered)
       _ <- passwordValidator.validate(userData.newPassword)
       newHash <- passwordHashing.hash(userData.newPassword)
-      _ <- tfa.check2fa(userData.username, userData.tfa, time)
-      _ <- users.registerUser(userData.username, userData.displayName, Some(newHash))
+      initialTfa <- users.getUser2fa(userData.username)
+      tfa <- tfa.checkRegistration(initialTfa, userData.tfa, time)
+      _ <- users.registerUser(userData.username, userData.displayName, Some(newHash), Some(tfa))
     } yield ()
   }
 
@@ -80,17 +83,13 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
   }
 
   override def get2faRegistrationParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters] = for {
-    user <- authenticateUser(request, time, AllowUnregistered, tfa.checkCanRegister)
+    user <- authenticateUser(request, time, AllowUnregistered, tfa.canRegister)
     username = user.username
 
     existingTfa <- users.getUser2fa(username)
 
     inactiveTotpSecret = existingTfa.inactiveTotpSecret.getOrElse(ssg.createRandomSecret(totp.algorithm))
-    // It is RECOMMENDED to let the user handle be 64 random bytes, and store this value in the user’s account
-    // https://www.w3.org/TR/webauthn-2/#sctn-user-handle-privacy
     webAuthnUserHandle = existingTfa.webAuthnUserHandle.getOrElse(WebAuthn.UserHandle.create(ssg))
-    // Challenges SHOULD therefore be at least 16 bytes long.
-    // https://www.w3.org/TR/webauthn-2/#sctn-cryptographic-challenges
     webAuthnChallenge = existingTfa.webAuthnChallenge.getOrElse(WebAuthn.Challenge.create(ssg))
 
     newTfa = existingTfa.copy(
@@ -111,6 +110,8 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     )
   }
 
+  // TODO MRB: should this give you back a challenge regardless of whether the user exists to avoid leaking
+  // that a username and password combination is correct?
   override def get2faChallengeParameters(request: Request[AnyContent], time: Epoch): Attempt[TfaChallengeParameters] = for {
     user <- authenticateUser(request, time, RequireRegistered, TwoFactorAuth.NoCheck)
     username = user.username
@@ -119,20 +120,12 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     user2faConfig <- buildAndSave2faConfiguration(username, user2fa)
   } yield user2faConfig
 
-  override def register2faMethod(request: Request[AnyContent], time: Epoch): Attempt[TfaChallengeParameters] = for {
-    user <- authenticateUser(request, time, AllowUnregistered, tfa.checkCanRegister)
-    username = user.username
-
-    formData <- request.body.asFormUrlEncoded.toAttempt(Attempt.Left(ClientFailure("No form data")))
-    tfaRegistration <- formData.get("tfaRegistration").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No tfaRegistration form parameter")))
-
-    registration <- Json.parse(tfaRegistration).validate[TfaRegistration].toAttempt
-
+  def register2faMethod(username: String, registration: TfaRegistration, time: Epoch): Attempt[Unit] = for {
     before <- users.getUser2fa(username)
-    after <- register2faMethod(before, registration, time)
+    after <- tfa.checkRegistration(before, Some(registration), time)
 
-    user2faConfig <- buildAndSave2faConfiguration(username, after)
-  } yield user2faConfig
+    _ <- buildAndSave2faConfiguration(username, after)
+  } yield ()
 
   private def authenticateUser(request: Request[AnyContent], time: Epoch, check: RegistrationCheck, checkTfa: TwoFactorAuth.Check): Attempt[DBUser] = {
     for {
@@ -141,7 +134,8 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       password <- formData.get("password").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No password form parameter")))
       tfaChallengeResponse = formData.get("tfa").flatMap(_.headOption).map(TotpCodeChallengeResponse)
       dbUser <- passwordHashing.verifyUser(users.getUser(username), password, check)
-      _ <- checkTfa(username, tfaChallengeResponse, time)
+      tfa <- users.getUser2fa(username)
+      _ <- checkTfa(TwoFactorAuth.CheckParams(username, tfa, tfaChallengeResponse, time))
     } yield dbUser
   }
 
@@ -159,24 +153,6 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
           webAuthnChallenge = WebAuthn.toBase64(challenge.data)
         )
       }
-    }
-  }
-
-  private def register2faMethod(before: DBUser2fa, registration: TfaRegistration, time: Epoch): Attempt[DBUser2fa] = {
-    registration match {
-      case TotpCodeRegistration(code) =>
-        for {
-          secret <- Attempt.fromOption(before.inactiveTotpSecret, Attempt.Left(UnknownFailure(new IllegalStateException("Missing inactiveTotpSecret"))))
-          _ <- totp.checkCodeFatal(secret, code, time)
-        } yield {
-          before.copy(
-            activeTotpSecret = Some(secret),
-            inactiveTotpSecret = Some(ssg.createRandomSecret(totp.algorithm))
-          )
-        }
-
-      case _ =>
-        ???
     }
   }
 }

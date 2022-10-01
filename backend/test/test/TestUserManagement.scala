@@ -1,5 +1,6 @@
 package test
 
+import model.frontend.user.TfaRegistration
 import model.manifest.Collection
 import model.user._
 import model.{Uri, user}
@@ -41,7 +42,7 @@ object TestUserManagement {
 
     val userManagement = TestUserManagement(users.toList)
     val totp = Totp.googleAuthenticatorInstance()
-    val tfa = new TwoFactorAuth(config.require2FA, totp, userManagement)
+    val tfa = new TwoFactorAuth(config.require2FA, totp, ssg)
 
     val userProvider = new DatabaseUserProvider(
       config = config,
@@ -166,13 +167,14 @@ class TestUserManagement(initialUsers: TestUserManagement.Storage) extends UserM
   override def removeUserCollection(username: String, collection: String): Attempt[Unit] =
     updateField(username, r => r.copy(collections = r.collections.filterNot(_.uri.value == collection))).map(_ => ())
 
-  override def registerUser(username: String, displayName: String, password: Option[BCryptPassword]): Attempt[DBUser] =
+  override def registerUser(username: String, displayName: String, password: Option[BCryptPassword], tfa: Option[DBUser2fa]): Attempt[DBUser] =
     updateField(username, r => r.copy(
       dbUser = r.dbUser.copy(
         password = password,
         displayName = Some(displayName),
         registered = true
-      )
+      ),
+      tfa = tfa.getOrElse(r.tfa)
     )).map(r => r.dbUser)
 
   override def setPermissions(username: String, permissions: UserPermissions): Attempt[Unit] =

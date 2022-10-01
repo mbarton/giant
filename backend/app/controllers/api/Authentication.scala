@@ -1,8 +1,9 @@
 package controllers.api
 
+import model.frontend.user.TfaRegistration
 import pdi.jwt.JwtSession._
 import pdi.jwt.JwtTime
-import play.api.libs.json.Json
+import play.api.libs.json.{JsValue, Json}
 import play.api.mvc.{AnyContent, ControllerComponents, Request}
 import services.Config
 import services.users.UserManagement
@@ -11,6 +12,7 @@ import utils.attempt._
 import utils.auth._
 import utils.auth.providers.UserProvider
 import utils.controller.{AuthControllerComponents, OptionalAuthApiController}
+
 import java.time.Clock
 import play.api.Configuration
 
@@ -58,13 +60,6 @@ class Authentication(override val controllerComponents: AuthControllerComponents
   def get2faRegistrationParameters = noAuth.ApiAction.attempt { request: Request[AnyContent] =>
     val time = Epoch.now
     userAuthenticator.get2faRegistrationParameters(request, time, config.app.label.getOrElse(request.host)).map { params =>
-      Ok(Json.toJson(params))
-    }
-  }
-
-  def register2faMethod = noAuth.ApiAction.attempt { request: Request[AnyContent] =>
-    val time = Epoch.now
-    userAuthenticator.register2faMethod(request, time).map { params =>
       Ok(Json.toJson(params))
     }
   }

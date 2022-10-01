@@ -47,7 +47,7 @@ class PanDomainUserProvider(val config: PandaAuthConfig, currentPublicKey: () =>
               _ <- if (user.registered)
                 Attempt.Right(user)
               else {
-                users.registerUser(user.username, displayName, None)
+                users.registerUser(user.username, displayName, None, None)
               }
             } yield {
               metricsService.recordUsageEvent(user.username)
@@ -92,7 +92,7 @@ class PanDomainUserProvider(val config: PandaAuthConfig, currentPublicKey: () =>
   override def updatePassword(username: String, newPassword: String): Attempt[Unit] = unsupportedOperation
   override def get2faRegistrationParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters] = unsupportedOperation
   override def get2faChallengeParameters(request: Request[AnyContent], time: Epoch): Attempt[TfaChallengeParameters] = unsupportedOperation
-  override def register2faMethod(request: Request[AnyContent], time: Epoch): Attempt[TfaChallengeParameters] = unsupportedOperation
+  override def register2faMethod(username: String, registration: TfaRegistration, time: Epoch): Attempt[Unit] = unsupportedOperation
   override def registerUser(userData: JsValue, time: Epoch): Attempt[Unit] = unsupportedOperation
 
   def unsupportedOperation[T] = Attempt.Left[T](UnsupportedOperationFailure("This authentication provider is federated and doesn't support this operation."))
