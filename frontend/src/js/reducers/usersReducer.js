@@ -10,7 +10,8 @@ export default function users(state = {
     switch (action.type) {
         case 'GENESIS_SETUP_CHECK_RECEIVE':
             return Object.assign({}, state, {
-                genesisSetupComplete: action.setupComplete
+                genesisSetupComplete: action.setupComplete,
+                genesisTotpSecret: action.totpSecret
             });
 
         case 'GENESIS_CREATE_USER_REQUEST':

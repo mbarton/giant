@@ -1,7 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import { ProgressAnimation } from '../UtilComponents/ProgressAnimation';
-import {generate2faToken} from '../../services/UserApi';
 import {Setup2Fa} from './Setup2Fa';
 import { config } from '../../types/Config';
 
@@ -16,15 +15,16 @@ export class CreateGenesisUserUnconnected extends React.Component {
         createDatabaseUser: PropTypes.func.isRequired,
         createPandaUser: PropTypes.func.isRequired,
         errors: PropTypes.arrayOf(PropTypes.string).isRequired,
-        requesting: PropTypes.bool.isRequired
+        requesting: PropTypes.bool.isRequired,
+        totpSecret: PropTypes.string
     };
 
     state = {
         hasCompletedPhase1: false,
-        username: '',
-        displayName: '',
-        password: '',
-        confirmPassword: '',
+        username: 'admin',
+        displayName: 'Burger King',
+        password: 'michaelbarton',
+        confirmPassword: 'michaelbarton',
         creatingUser: false,
         tfaCode: ''
     };
@@ -64,12 +64,11 @@ export class CreateGenesisUserUnconnected extends React.Component {
         e.preventDefault();
 
         if (!this.state.hasCompletedPhase1 && this.canContinue()) {
-            generate2faToken(this.state.username)
-                .then(res => this.setState({url: res.url, secret: res.secret, hasCompletedPhase1: true}));
+            this.setState({hasCompletedPhase1: true});
 
         } else if (this.state.hasCompletedPhase1 && this.canFinish()) {
             const totpActivation = {
-                secret: this.state.secret,
+                secret: this.props.totpSecret,
                 code: this.state.tfaCode
             };
             this.props.createDatabaseUser(this.state.username, this.state.displayName, this.state.password, totpActivation);
@@ -84,6 +83,13 @@ export class CreateGenesisUserUnconnected extends React.Component {
     skip2fa = () => {
         this.props.createDatabaseUser(this.state.username, this.state.displayName, this.state.password, undefined);
     };
+
+    totpUrl = () => {
+        const totpIssuer = this.props.config.authConfig.totpIssuer;
+        const instance = this.props.config.label || window.location.hostname;
+
+        return `otpauth://totp/${this.state.username}?secret=${this.props.totpSecret}&issuer=${totpIssuer}%20(${instance})`;
+    }
 
     renderActions = () => {
         const errors = [].concat(this.errors(), this.props.errors);
@@ -143,8 +149,8 @@ export class CreateGenesisUserUnconnected extends React.Component {
                     <div>
                         <Setup2Fa
                             username={this.state.username}
-                            secret={this.state.secret}
-                            url={this.state.url}
+                            secret={this.props.totpSecret}
+                            url={this.totpUrl()}
                             />
                         {this.renderField('tfaCode', 'Authentication Code', 'text', true)}
                         {this.renderActions()}
@@ -218,7 +224,8 @@ function mapStateToProps(state) {
     return {
         config: state.app.config,
         requesting: users.genesisSetupRequesting,
-        errors: users.errors
+        errors: users.errors,
+        totpSecret: users.genesisTotpSecret
     };
 }
 

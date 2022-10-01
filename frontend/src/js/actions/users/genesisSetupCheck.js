@@ -22,6 +22,7 @@ function receiveSetupCheck(res) {
     return {
         type:          'GENESIS_SETUP_CHECK_RECEIVE',
         setupComplete: res.setupComplete,
+        totpSecret:    res.totpSecret,
         receivedAt:    Date.now()
     };
 }

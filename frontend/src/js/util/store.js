@@ -20,7 +20,7 @@ function configureStore(history) {
             applyMiddleware(updateUrlFromStateChangeMiddleware),
             applyMiddleware(updateStateFromUrlChangeMiddleware),
             applyMiddleware(routerMiddleware(history)),
-            window.devToolsExtension ? window.devToolsExtension() : f => f
+            window.__REDUX_DEVTOOLS_EXTENSION__ && window.__REDUX_DEVTOOLS_EXTENSION__()
         )
     );
 
