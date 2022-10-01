@@ -124,6 +124,13 @@ export class RegisterUser extends React.Component {
             undefined);
     }
 
+    totpUrl = () => {
+        const totpIssuer = this.props.config.authConfig.totpIssuer;
+        const instance = this.props.config.label || window.location.hostname;
+
+        return `otpauth://totp/${this.state.username}?secret=${this.state.secret}&issuer=${totpIssuer}%20(${instance})`;
+    }
+
     renderActions = () => {
         const errors = this.errors();
 
@@ -207,7 +214,7 @@ export class RegisterUser extends React.Component {
                         <Setup2Fa
                             username={this.state.username}
                             secret={this.state.secret}
-                            url={this.state.url}
+                            url={this.totpUrl()}
                             />
                         {this.renderField('tfaCode', 'Authentication Code', 'text', this.onKeyDown, true)}
                         {this.renderActions()}
