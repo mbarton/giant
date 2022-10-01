@@ -26,21 +26,23 @@ case class TotpGenesisRegistration(secret: String, code: String) extends TfaRegi
 
 /**
  * Sent to the server when registering a WebAuthn public key (eg Yubikey, iOS passkey)
- * See https://www.w3.org/TR/webauthn-2/#dictionary-client-data
+ * All fields are base64 encoded
  */
-// TODO MRB: also store attestation documents?
-case class WebAuthnClientData(id: String, challenge: String, origin: String) extends TfaRegistration
+case class WebAuthnPublicKeyRegistration(id: String, clientDataJson: String, attestationObject: String) extends TfaRegistration
 
 object TfaRegistration {
   private implicit val totpCodeRegistrationFormat: Format[TotpCodeRegistration] = Json.format[TotpCodeRegistration]
   private implicit val totpGeneisRegistrationFormat: Format[TotpGenesisRegistration] = Json.format[TotpGenesisRegistration]
-  private implicit val webAuthnClientDataFormat: Format[WebAuthnClientData] = Json.format[WebAuthnClientData]
+  private implicit val webAuthnPublicKeyRegistration: Format[WebAuthnPublicKeyRegistration] = Json.format[WebAuthnPublicKeyRegistration]
 
   implicit val format: Format[TfaRegistration] = new Format[TfaRegistration] {
     override def reads(json: JsValue): JsResult[TfaRegistration] = {
       (json \ "type").validate[String].flatMap {
         case "totp" =>
           json.validate[TotpGenesisRegistration].recoverWith(_ => json.validate[TotpCodeRegistration])
+
+        case "webauthn" =>
+          json.validate[WebAuthnPublicKeyRegistration]
 
         case other => JsError(s"Unknown TfaChallengeResponse type ${other}")
       }
@@ -52,6 +54,9 @@ object TfaRegistration {
 
       case r: TotpGenesisRegistration =>
         Json.toJson(r).as[JsObject] ++ Json.obj("type" -> "totp")
+
+      case r: WebAuthnPublicKeyRegistration =>
+        Json.toJson(r)
 
       case other =>
         throw new IllegalArgumentException(s"Unknown TfaChallengeResponse type ${other.getClass}")

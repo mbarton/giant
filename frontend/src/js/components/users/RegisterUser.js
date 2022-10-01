@@ -4,6 +4,7 @@ import { ProgressAnimation } from '../UtilComponents/ProgressAnimation';
 import {generate2faToken} from '../../services/UserApi';
 import {Setup2Fa} from './Setup2Fa';
 import { config } from '../../types/Config';
+import { registerSecurityKey } from '../../util/auth/webauthn';
 
 export class RegisterUser extends React.Component {
     static propTypes = {
@@ -26,6 +27,11 @@ export class RegisterUser extends React.Component {
         tfaCode: '',
 
         requesting: false
+    }
+
+    // TODO MRB: remove me after testing
+    componentDidMount = () => {
+        this.continuePressed();
     }
 
     canContinue = () => {
@@ -60,22 +66,18 @@ export class RegisterUser extends React.Component {
         return errors;
     }
 
-    submit = (username, previousPassword, displayName, newPassword, tfaCode) => {
+    submit = (tfa) => {
+        const { username, previousPassword, displayName, newPassword } = this.state;
+
         this.setState({ requesting: true });
 
         const body = {
-            username: username,
-            previousPassword: previousPassword,
-            displayName: displayName,
-            newPassword: newPassword
+            username,
+            previousPassword,
+            displayName,
+            newPassword,
+            tfa
         };
-
-        if(tfaCode) {
-            body.tfa = {
-                type: 'totp',
-                code: tfaCode
-            };
-        }
 
         fetch('/api/users/' + username + '/register', {
             headers: new Headers({'Content-Type': 'application/json'}),
@@ -105,23 +107,40 @@ export class RegisterUser extends React.Component {
     continuePressed = () => {
         if (!this.state.hasCompletedPhase1 && this.canContinue()) {
             generate2faToken(this.state.username, this.state.previousPassword)
-                .then(res => this.setState({url: res.totpUrl, secret: res.totpSecret, hasCompletedPhase1: true}));
+                .then(res => this.setState({
+                    url: res.totpUrl,
+                    secret: res.totpSecret,
+                    hasCompletedPhase1: true,
+                    webAuthnChallenge: res.webAuthnChallenge,
+                    webAuthnUserHandle: res.webAuthnUserHandle
+                }));
 
         } else if (this.state.hasCompletedPhase1 && this.canFinish()) {
-            this.submit(this.state.username,
-                this.state.previousPassword,
-                this.state.displayName,
-                this.state.newPassword,
-                this.state.tfaCode);
+            this.submit({
+                type: 'totp',
+                code: this.state.tfaCode
+            });
         }
     };
 
+    registerSecurityKey = (e) => {
+        e.preventDefault();
+
+        const totpIssuer = this.props.config.authConfig.totpIssuer;
+        const instance = this.props.config.label || window.location.hostname;
+        const name = `${totpIssuer} (${instance})`;
+
+        registerSecurityKey(this.state.webAuthnChallenge, name, this.state.webAuthnUserHandle, this.state.username, this.state.displayName)
+            .then(registration => {
+                this.submit({
+                    type: 'webauthn',
+                    ...registration
+                });
+            });
+    }
+
     skip2fa = () => {
-        this.submit(this.state.username,
-            this.state.previousPassword,
-            this.state.displayName,
-            this.state.newPassword,
-            undefined);
+        this.submit(undefined);
     }
 
     totpUrl = () => {
@@ -143,7 +162,7 @@ export class RegisterUser extends React.Component {
         }
 
         const enabled = this.state.hasCompletedPhase1 ? this.canFinish() : this.canContinue();
-        const buttonText = this.state.hasCompletedPhase1 ? 'Finish' : 'Continue';
+        const buttonText = this.state.hasCompletedPhase1 ? 'Register' : 'Continue';
 
         return (
             <div className='form__actions'>
@@ -210,7 +229,8 @@ export class RegisterUser extends React.Component {
             <div className='app__page app__page--centered'>
                 <form className='form' noValidate>
                     <h2>Setup Two Factor Authentication</h2>
-                    <div>
+                    <div className='form__section'>
+                        <h3 className='form__subtitle'>Authenticator App</h3>
                         <Setup2Fa
                             username={this.state.username}
                             secret={this.state.secret}
@@ -218,14 +238,20 @@ export class RegisterUser extends React.Component {
                             />
                         {this.renderField('tfaCode', 'Authentication Code', 'text', this.onKeyDown, true)}
                         {this.renderActions()}
-                        {
-                            this.props.config.authConfig.require2fa
-                            ?
-                                false
-                            :
-                                <button className='users__skip-2fa' type='button' onClick={this.skip2fa}>Skip this step</button>
-                        }
                     </div>
+                    <div className='form__section'>
+                        <h3 className='form__subtitle'>Security Key</h3>
+                        <button className='btn' onClick={this.registerSecurityKey}>Register</button>
+                    </div>
+                    {
+                        this.props.config.authConfig.require2fa
+                        ?
+                            false
+                        :
+                            <div className='form__section'>
+                                <button className='users__skip-2fa' type='button' onClick={this.skip2fa}>Skip this step</button>
+                            </div>
+                    }
                 </form>
             </div>
         );
