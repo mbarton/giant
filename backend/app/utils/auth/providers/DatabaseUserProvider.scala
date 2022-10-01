@@ -2,13 +2,13 @@ package utils.auth.providers
 
 import model.frontend.user._
 import model.user._
-import play.api.libs.json.{JsBoolean, JsNumber, JsValue, Json}
+import play.api.libs.json.{JsBoolean, JsNumber, JsString, JsValue, Json}
 import play.api.mvc.{AnyContent, Request}
 import services.DatabaseAuthConfig
 import services.users.UserManagement
 import utils.Epoch
 import utils.attempt._
-import utils.auth.totp.{SecureSecretGenerator, Totp}
+import utils.auth.totp.{Secret, SecureSecretGenerator, Totp}
 import utils.auth.webauthn.WebAuthn
 import utils.auth._
 
@@ -24,8 +24,17 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
 
   override def clientConfig: Map[String, JsValue] = Map(
     "require2fa" -> JsBoolean(config.require2FA),
-    "minPasswordLength" -> JsNumber(config.minPasswordLength)
+    "minPasswordLength" -> JsNumber(config.minPasswordLength),
+    "totpIssuer" -> JsString(config.totpIssuer)
   )
+
+  override def genesisUserConfig(): Map[String, JsValue] = {
+    val totpSecret = ssg.createRandomSecret(totp.algorithm)
+
+    Map(
+      "totpSecret" -> JsString(totpSecret.toBase32)
+    )
+  }
 
   override def authenticate(request: Request[AnyContent], time: Epoch): Attempt[PartialUser] =
     authenticateUser(request, time, RequireRegistered, tfa.check2fa).map(_.toPartial)
@@ -79,7 +88,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     } yield ()
   }
 
-  override def get2faRegistrationParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters] = for {
+  override def get2faRegistrationParameters(request: Request[AnyContent], time: Epoch): Attempt[TfaRegistrationParameters] = for {
     user <- authenticateUser(request, time, AllowUnregistered, tfa.checkCanRegister)
     username = user.username
 
@@ -95,11 +104,10 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
 
     _ <- users.setUser2fa(username, newTfa)
   } yield {
-    val totpSecret = inactiveTotpSecret.toBase32
+    val totpSecret = inactiveTotpSecret
 
     TfaRegistrationParameters(
-      totpSecret = totpSecret,
-      totpUrl = s"otpauth://totp/$username?secret=$totpSecret&issuer=${config.totpIssuer}%20($instance)",
+      totpSecret = totpSecret.toBase32,
       webAuthnUserHandle = WebAuthn.toBase64(webAuthnUserHandle.data),
       webAuthnChallenge = WebAuthn.toBase64(webAuthnChallenge.data),
     )

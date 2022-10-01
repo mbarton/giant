@@ -5,7 +5,7 @@ import play.api.libs.json.{Format, JsError, JsObject, JsResult, JsValue, Json, R
 /**
  * Sent to the client before registering a new 2fa method
  */
-case class TfaRegistrationParameters(totpSecret: String, totpUrl: String, webAuthnUserHandle: String, webAuthnChallenge: String)
+case class TfaRegistrationParameters(totpSecret: String, webAuthnUserHandle: String, webAuthnChallenge: String)
 object TfaRegistrationParameters {
   implicit val writes: Writes[TfaRegistrationParameters] = Json.writes[TfaRegistrationParameters]
 }

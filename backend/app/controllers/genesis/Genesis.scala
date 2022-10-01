@@ -1,17 +1,16 @@
 package controllers.genesis
 
-import play.api.libs.json.Json
+import play.api.libs.json.{JsBoolean, Json}
 import play.api.mvc.ControllerComponents
 import services.users.UserManagement
-import utils.{Epoch, Logging}
 import utils.attempt._
 import utils.auth.providers.UserProvider
-import utils.controller.{NoAuthApiController, AuthControllerComponents}
+import utils.controller.NoAuthApiController
+import utils.{Epoch, Logging}
 
 import scala.util.Success
 
-class Genesis(override val controllerComponents: ControllerComponents,
-              userProvider: UserProvider, users: UserManagement, flowEnabled: Boolean)
+class Genesis(override val controllerComponents: ControllerComponents, userProvider: UserProvider, users: UserManagement, flowEnabled: Boolean)
   extends NoAuthApiController with Logging {
 
   private var setupComplete: Attempt[Boolean] = Attempt.Right(false)
@@ -40,7 +39,17 @@ class Genesis(override val controllerComponents: ControllerComponents,
   }
 
   def checkSetup = ApiAction.attempt {
-    getSetupComplete.map(complete => Ok(Json.toJson(Json.obj("setupComplete" -> complete))))
+    getSetupComplete.map {
+      case true =>
+        Ok(Json.toJson(Json.obj("setupComplete" -> true)))
+
+      case false =>
+        val fields = userProvider.genesisUserConfig() ++ Map(
+          "setupComplete" -> JsBoolean(false)
+        )
+
+        Ok(Json.toJson(fields))
+    }
   }
 
   def doSetup() = ApiAction.attempt(parse.json) { request =>

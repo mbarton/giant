@@ -26,6 +26,8 @@ class PanDomainUserProvider(val config: PandaAuthConfig, currentPublicKey: () =>
     "loginUrl" -> JsString(config.loginUrl)
   )
 
+  override def genesisUserConfig(): Map[String, JsValue] = Map.empty
+
   override def authenticate(request: Request[AnyContent], time: Epoch): Attempt[PartialUser] = {
 
     def validateUser(user: AuthenticatedUser): Boolean = {
@@ -88,7 +90,7 @@ class PanDomainUserProvider(val config: PandaAuthConfig, currentPublicKey: () =>
 
   /** None of these make sense for a pan domain authed user so we return a failure **/
   override def updatePassword(username: String, newPassword: String): Attempt[Unit] = unsupportedOperation
-  override def get2faRegistrationParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters] = unsupportedOperation
+  override def get2faRegistrationParameters(request: Request[AnyContent], time: Epoch): Attempt[TfaRegistrationParameters] = unsupportedOperation
   override def get2faChallengeParameters(request: Request[AnyContent], time: Epoch): Attempt[TfaChallengeParameters] = unsupportedOperation
   override def register2faMethod(username: String, registration: TfaRegistration, time: Epoch): Attempt[Unit] = unsupportedOperation
   override def registerUser(userData: JsValue, time: Epoch): Attempt[Unit] = unsupportedOperation

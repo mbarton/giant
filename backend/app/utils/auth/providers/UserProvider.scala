@@ -15,6 +15,7 @@ trait UserProvider {
   def config: AuthProviderConfig
   /** the configuration that is shipped to the UI for enhancements like client side minimum password length checks etc. **/
   def clientConfig: Map[String, JsValue]
+  def genesisUserConfig(): Map[String, JsValue]
   /** authenticate a user based on the HTTP request and the current time (for any 2FA calculations) **/
   def authenticate(request: Request[AnyContent], time: Epoch): Attempt[PartialUser]
   /** create an all powerful initial user **/
@@ -28,7 +29,7 @@ trait UserProvider {
   /** update the password of a user **/
   def updatePassword(username: String, newPassword: String): Attempt[Unit]
   /** generate brand new 2FA secrets and challenges ready for a user to add their device * */
-  def get2faRegistrationParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters]
+  def get2faRegistrationParameters(request: Request[AnyContent], time: Epoch): Attempt[TfaRegistrationParameters]
   /** get any configuration required to support 2fa (eg webauthn credential ids and challenge) */
   def get2faChallengeParameters(request: Request[AnyContent], time: Epoch): Attempt[TfaChallengeParameters]
   /** register a new 2fa method */

@@ -1,24 +1,22 @@
 package controllers.api
 
-import model.frontend.user.TfaRegistration
 import pdi.jwt.JwtSession._
 import pdi.jwt.JwtTime
-import play.api.libs.json.{JsValue, Json}
-import play.api.mvc.{AnyContent, ControllerComponents, Request}
+import play.api.Configuration
+import play.api.libs.json.Json
+import play.api.mvc.{AnyContent, Request}
 import services.Config
 import services.users.UserManagement
-import utils.{Epoch, Logging}
 import utils.attempt._
 import utils.auth._
 import utils.auth.providers.UserProvider
 import utils.controller.{AuthControllerComponents, OptionalAuthApiController}
+import utils.{Epoch, Logging}
 
 import java.time.Clock
-import play.api.Configuration
 
-import scala.concurrent.ExecutionContext
-
-class Authentication(override val controllerComponents: AuthControllerComponents, userAuthenticator: UserProvider, users: UserManagement, config: Config)(implicit conf: Configuration, clock: Clock)
+class Authentication(override val controllerComponents: AuthControllerComponents, userAuthenticator: UserProvider,
+                     users: UserManagement, config: Config)(implicit conf: Configuration, clock: Clock)
   extends OptionalAuthApiController with Logging {
 
   def healthcheck() = noAuth.ApiAction {
@@ -59,7 +57,7 @@ class Authentication(override val controllerComponents: AuthControllerComponents
 
   def get2faRegistrationParameters = noAuth.ApiAction.attempt { request: Request[AnyContent] =>
     val time = Epoch.now
-    userAuthenticator.get2faRegistrationParameters(request, time, config.app.label.getOrElse(request.host)).map { params =>
+    userAuthenticator.get2faRegistrationParameters(request, time).map { params =>
       Ok(Json.toJson(params))
     }
   }
