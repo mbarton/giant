@@ -22,9 +22,9 @@ export class CreateGenesisUserUnconnected extends React.Component {
     state = {
         hasCompletedPhase1: false,
         username: 'admin',
-        displayName: 'Burger King',
-        password: 'michaelbarton',
-        confirmPassword: 'michaelbarton',
+        displayName: 'Administrator',
+        password: '',
+        confirmPassword: '',
         creatingUser: false,
         tfaCode: ''
     };
@@ -67,11 +67,12 @@ export class CreateGenesisUserUnconnected extends React.Component {
             this.setState({hasCompletedPhase1: true});
 
         } else if (this.state.hasCompletedPhase1 && this.canFinish()) {
-            const totpActivation = {
+            const tfa = {
+                type: 'totp',
                 secret: this.props.totpSecret,
                 code: this.state.tfaCode
             };
-            this.props.createDatabaseUser(this.state.username, this.state.displayName, this.state.password, totpActivation);
+            this.props.createDatabaseUser(this.state.username, this.state.displayName, this.state.password, tfa);
         }
     };
 

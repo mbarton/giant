@@ -59,11 +59,11 @@ export function genesisSetupCheckApi() {
     return fetch('/setup').then(res => res.json());
 }
 
-export function genesisSetupInitialDatabaseUserApi(username, displayName, password, totpActivation) {
+export function genesisSetupInitialDatabaseUserApi(username, displayName, password, tfa) {
     return fetch('/setup', {
         headers: new Headers({'Content-Type': 'application/json'}),
         method: 'PUT',
-        body: JSON.stringify({username: username, displayName: displayName, password: password, totpActivation: totpActivation})
+        body: JSON.stringify({username, displayName, password, tfa})
     }).then(res => res.json());
 }
 
