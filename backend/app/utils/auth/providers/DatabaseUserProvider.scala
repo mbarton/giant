@@ -35,8 +35,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       userData <- request.validate[NewGenesisUser].toAttempt
       encryptedPassword <- passwordHashing.hash(userData.password)
       _ <- passwordValidator.validate(userData.password)
-      initialTfa <- users.getUser2fa(userData.username)
-      tfa <- tfa.checkRegistration(initialTfa, userData.tfa, time)
+      tfa <- tfa.checkGenesisRegistration(userData.tfa, time)
       // We will immediately register after creating
       user = DBUser(userData.username, None, None, invalidationTime = None, registered = false)
       _ <- users.createUser(user, UserPermissions.bigBoss)
@@ -83,7 +82,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
   }
 
   override def get2faRegistrationParameters(request: Request[AnyContent], time: Epoch, instance: String): Attempt[TfaRegistrationParameters] = for {
-    user <- authenticateUser(request, time, AllowUnregistered, tfa.canRegister)
+    user <- authenticateUser(request, time, AllowUnregistered, tfa.checkCanRegister)
     username = user.username
 
     existingTfa <- users.getUser2fa(username)

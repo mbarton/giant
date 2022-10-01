@@ -1,9 +1,9 @@
 package utils.auth
 
-import model.frontend.user.{TfaChallengeResponse, TfaRegistration, TotpCodeChallengeResponse, TotpCodeRegistration}
+import model.frontend.user.{TfaChallengeResponse, TfaRegistration, TotpCodeChallengeResponse, TotpCodeRegistration, TotpGenesisRegistration}
 import model.user.DBUser2fa
 import utils.attempt.{Attempt, LoginFailure, MisconfiguredAccount, SecondFactorRequired, UnknownFailure}
-import utils.auth.totp.{SecureSecretGenerator, Totp}
+import utils.auth.totp.{Base32Secret, SecureSecretGenerator, Totp}
 import utils.{Epoch, Logging}
 
 import scala.concurrent.ExecutionContext
@@ -39,7 +39,7 @@ class TwoFactorAuth(require2fa: Boolean, totp: Totp, ssg: SecureSecretGenerator)
       Attempt.Left(SecondFactorRequired("Could not validate 2FA"))
   }
 
-  def canRegister: Check = {
+  def checkCanRegister: Check = {
     case CheckParams(_, user2fa, None, _) if user2fa.hasMethodRegistered =>
       Attempt.Left(SecondFactorRequired("2FA code required"))
 
@@ -61,18 +61,31 @@ class TwoFactorAuth(require2fa: Boolean, totp: Totp, ssg: SecureSecretGenerator)
     case None if !require2fa =>
       Attempt.Right(user2fa)
 
-    case Some(TotpCodeRegistration(code)) =>
-      for {
-        secret <- Attempt.fromOption(user2fa.inactiveTotpSecret, Attempt.Left(UnknownFailure(new IllegalStateException("Missing inactiveTotpSecret"))))
-        _ <- totp.checkCodeFatal(secret, code, time)
-      } yield {
-        user2fa.copy(
-          activeTotpSecret = Some(secret),
-          inactiveTotpSecret = Some(ssg.createRandomSecret(totp.algorithm))
-        )
-      }
+    case Some(TotpCodeRegistration(code)) => for {
+      secret <- Attempt.fromOption(user2fa.inactiveTotpSecret, Attempt.Left(UnknownFailure(new IllegalStateException("Missing inactiveTotpSecret"))))
+      _ <- totp.checkCodeFatal(secret, code, time)
+    } yield {
+      user2fa.copy(
+        activeTotpSecret = Some(secret),
+        inactiveTotpSecret = Some(ssg.createRandomSecret(totp.algorithm))
+      )
+    }
 
     case _ =>
       ???
+  }
+
+  def checkGenesisRegistration(registration: Option[TfaRegistration], time: Epoch): Attempt[DBUser2fa] = registration match {
+    case None if !require2fa =>
+      Attempt.Right(DBUser2fa.initial(ssg, totp))
+
+    case Some(TotpGenesisRegistration(secretString, code)) =>
+      val secret = Base32Secret(secretString)
+
+      totp.checkCodeFatal(secret, code, time).map { _ =>
+        DBUser2fa.initial(ssg, totp).copy(
+          activeTotpSecret = Some(secret)
+        )
+      }
   }
 }
