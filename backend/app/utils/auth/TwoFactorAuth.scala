@@ -1,9 +1,10 @@
 package utils.auth
 
-import model.frontend.user.{TfaChallengeResponse, TfaRegistration, TotpCodeChallengeResponse, TotpCodeRegistration, TotpGenesisRegistration}
+import model.frontend.user.{TfaChallengeResponse, TfaRegistration, TotpCodeChallengeResponse, TotpCodeRegistration, TotpGenesisRegistration, WebAuthnPublicKeyRegistration}
 import model.user.{DBUser, DBUser2fa}
 import utils.attempt.{Attempt, LoginFailure, MisconfiguredAccount, SecondFactorRequired, UnknownFailure}
 import utils.auth.totp.{Base32Secret, SecureSecretGenerator, Totp}
+import utils.auth.webauthn.WebAuthn
 import utils.{Epoch, Logging}
 
 import scala.concurrent.ExecutionContext
@@ -56,9 +57,12 @@ class TwoFactorAuth(require2fa: Boolean, totp: Totp, ssg: SecureSecretGenerator)
       Attempt.Left(SecondFactorRequired("Could not validate 2FA"))
   }
 
-  def checkRegistration(user2fa: DBUser2fa, registration: Option[TfaRegistration], time: Epoch): Attempt[DBUser2fa] = registration match {
+  def checkRegistration(username: String, user2fa: DBUser2fa, registration: Option[TfaRegistration], time: Epoch): Attempt[DBUser2fa] = registration match {
     case None if !require2fa =>
       Attempt.Right(user2fa)
+
+    case None =>
+      Attempt.Left(SecondFactorRequired("2FA is required"))
 
     case Some(TotpCodeRegistration(code)) => for {
       secret <- Attempt.fromOption(user2fa.inactiveTotpSecret, Attempt.Left(UnknownFailure(new IllegalStateException("Missing inactiveTotpSecret"))))
@@ -70,8 +74,8 @@ class TwoFactorAuth(require2fa: Boolean, totp: Totp, ssg: SecureSecretGenerator)
       )
     }
 
-    case _ =>
-      ???
+    case Some(registration: WebAuthnPublicKeyRegistration) =>
+      WebAuthn.verifyRegistration(username, user2fa, registration)
   }
 
   def checkGenesisRegistration(registration: Option[TfaRegistration], time: Epoch): Attempt[DBUser2fa] = registration match {

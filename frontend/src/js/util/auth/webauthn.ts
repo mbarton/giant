@@ -24,7 +24,7 @@ export async function registerSecurityKey(challenge: string, name: string, userH
                 authenticatorAttachment: 'cross-platform'
             },
             timeout: 60000,
-            attestation: 'indirect'
+            attestation: 'none'
         }
     });
 

@@ -71,7 +71,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       user <- passwordHashing.verifyUser(users.getUser(userData.username), userData.previousPassword, RequireNotRegistered)
       _ <- passwordValidator.validate(userData.newPassword)
       newHash <- passwordHashing.hash(userData.newPassword)
-      tfa <- tfa.checkRegistration(user.tfa, userData.tfa, time)
+      tfa <- tfa.checkRegistration(user.username, user.tfa, userData.tfa, time)
       _ <- users.registerUser(userData.username, userData.displayName, Some(newHash), Some(tfa))
     } yield ()
   }
@@ -124,7 +124,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
 
   def register2faMethod(username: String, registration: TfaRegistration, time: Epoch): Attempt[Unit] = for {
     user <- users.getUser(username)
-    tfa <- tfa.checkRegistration(user.tfa, Some(registration), time)
+    tfa <- tfa.checkRegistration(user.username, user.tfa, Some(registration), time)
 
     _ <- buildAndSave2faConfiguration(username, tfa)
   } yield ()
