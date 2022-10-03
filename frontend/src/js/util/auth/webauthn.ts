@@ -12,7 +12,7 @@ export async function registerSecurityKey(challenge: string, name: string, userH
             rp: {
                 name,
                 // TODO MRB: get this from client config?
-                id: 'localhost:3000'
+                id: 'localhost'
             },
             user: {
                 id: Uint8Array.from(atob(userHandle), c => c.charCodeAt(0)),

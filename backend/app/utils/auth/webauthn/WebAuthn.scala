@@ -5,27 +5,25 @@ import com.fasterxml.jackson.dataformat.cbor.CBORFactory
 import com.webauthn4j.WebAuthnManager
 import com.webauthn4j.converter.exception.DataConversionException
 import com.webauthn4j.data.client.Origin
+import com.webauthn4j.data.client.challenge.{DefaultChallenge => WebAuthn4JChallenge}
 import com.webauthn4j.data.{RegistrationParameters, RegistrationRequest}
 import com.webauthn4j.server.ServerProperty
-import com.webauthn4j.data.client.challenge.{DefaultChallenge => WebAuthn4JChallenge}
 import com.webauthn4j.validator.exception.ValidationException
 import model.frontend.user.WebAuthnPublicKeyRegistration
 import model.user.DBUser2fa
-import play.api.libs.json.Json
 import utils.Logging
 import utils.attempt._
 import utils.auth.totp.{Algorithm, SecureSecretGenerator}
 
-import java.nio.ByteBuffer
 import java.util.Base64
-import scala.util.control.NonFatal
 
 object WebAuthn extends Logging {
   private val cborObjectMapper = new ObjectMapper(new CBORFactory())
   private val webAuthnManager = WebAuthnManager.createNonStrictWebAuthnManager()
 
-  // TODO MRB: how to determine this?
-  val origin = "localhost:3000"
+  // TODO MRB: how to determine these?
+  val origin = "http://localhost:3000"
+  val rpId = "localhost"
 
   // TODO MRB: what else should we support?
   val supportedAlg = -7 // ECDSA w/ SHA-256 https://www.iana.org/assignments/cose/cose.xhtml#algorithms
@@ -67,7 +65,7 @@ object WebAuthn extends Logging {
 
   def verifyRegistration(username: String, tfa: DBUser2fa, registration: WebAuthnPublicKeyRegistration): Attempt[DBUser2fa] = {
     val challenge = new WebAuthn4JChallenge(tfa.webAuthnChallenge.get.data.toArray)
-    val serverProperty = new ServerProperty(new Origin(origin), origin, challenge, null)
+    val serverProperty = new ServerProperty(new Origin(origin), rpId, challenge, null)
 
     val registrationRequest = new RegistrationRequest(
       fromBase64(registration.attestationObject).toArray,
