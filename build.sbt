@@ -134,7 +134,25 @@ lazy val backend = (project in file("backend"))
       "com.sun.mail" % "javax.mail" % "1.6.2",
       "org.jsoup" % "jsoup" % "1.11.3",
       "com.gu" %% "pan-domain-auth-verification" % "0.8.0",
-      "com.webauthn4j" % "webauthn4j-core" % "0.20.4.RELEASE",
+
+      // webauthn4j and play dependency issue number
+      //  webauthn4j depends on Jackson 2.13. Play (via Akka) depends on Jackson 2.11
+      //  You can manually pull up the dependencies if everything still works (https://github.com/orgs/playframework/discussions/11222)
+      "com.fasterxml.jackson.core" % "jackson-core" % "2.13.4",
+      "com.fasterxml.jackson.core" % "jackson-annotations" % "2.13.4",
+      "com.fasterxml.jackson.datatype" % "jackson-datatype-jdk8" % "2.13.4",
+      "com.fasterxml.jackson.datatype" % "jackson-datatype-jsr310" % "2.13.4",
+      "com.fasterxml.jackson.core" % "jackson-databind" % "2.13.4",
+      "com.fasterxml.jackson.dataformat" % "jackson-dataformat-cbor" % "2.13.4",
+      "com.fasterxml.jackson.module" % "jackson-module-parameter-names" % "2.13.4",
+      "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.13.4",
+
+      // webauthn4j and play dependency issue number 2
+      //  webauthn4j depends on slf4j v2. Play (via logback-classic) depends on v1
+      //  They are incompatible and cause a runtime error so there is nothing we can do until Play update their end
+      //  Luckily our good friend Jon Soul is on it! https://github.com/playframework/playframework/pull/11419
+      //  In the meantime, use the last version of webauthn4j that was still built against slf4j v1
+      "com.webauthn4j" % "webauthn4j-core" % "0.20.2.RELEASE",
 
       // Libraries whose use are potentially contentious
 
