@@ -3,23 +3,32 @@ package utils.auth.webauthn
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.dataformat.cbor.CBORFactory
 import com.webauthn4j.WebAuthnManager
+import com.webauthn4j.authenticator.{Authenticator, AuthenticatorImpl}
+import com.webauthn4j.converter.AttestedCredentialDataConverter
 import com.webauthn4j.converter.exception.DataConversionException
+import com.webauthn4j.converter.util.ObjectConverter
+import com.webauthn4j.data.attestation.authenticator.AttestedCredentialData
 import com.webauthn4j.data.client.Origin
 import com.webauthn4j.data.client.challenge.{DefaultChallenge => WebAuthn4JChallenge}
-import com.webauthn4j.data.{RegistrationParameters, RegistrationRequest}
+import com.webauthn4j.data.extension.authenticator.{AuthenticationExtensionsAuthenticatorOutputs, RegistrationExtensionAuthenticatorOutput}
+import com.webauthn4j.data.extension.client.{AuthenticationExtensionsClientOutputs, RegistrationExtensionClientOutput}
+import com.webauthn4j.data.{AuthenticatorTransport, RegistrationParameters, RegistrationRequest}
 import com.webauthn4j.server.ServerProperty
 import com.webauthn4j.validator.exception.ValidationException
 import model.frontend.user.WebAuthnPublicKeyRegistration
 import model.user.DBUser2fa
+import play.api.libs.json.{Format, JsArray, JsNumber, JsResult, JsString, JsValue, Json}
 import utils.Logging
 import utils.attempt._
 import utils.auth.totp.{Algorithm, SecureSecretGenerator}
 
+import scala.collection.JavaConverters._
 import java.util.Base64
 
 object WebAuthn extends Logging {
-  private val cborObjectMapper = new ObjectMapper(new CBORFactory())
   private val webAuthnManager = WebAuthnManager.createNonStrictWebAuthnManager()
+  private val webAuthnObjectConverter = new ObjectConverter(new ObjectMapper(), new ObjectMapper(new CBORFactory()))
+  private val attestedCredentialDataConverter = new AttestedCredentialDataConverter(webAuthnObjectConverter)
 
   // TODO MRB: how to determine these?
   val origin = "http://localhost:3000"
@@ -30,7 +39,9 @@ object WebAuthn extends Logging {
 
   // It is RECOMMENDED to let the user handle be 64 random bytes, and store this value in the user’s account
   // https://www.w3.org/TR/webauthn-2/#sctn-user-handle-privacy
-  case class UserHandle(data: Vector[Byte])
+  case class UserHandle(data: Vector[Byte]) {
+    def encode(): String = toBase64(data)
+  }
   object UserHandle {
     def apply(data: Vector[Byte]): UserHandle = {
       assert(data.length == 64)
@@ -40,11 +51,16 @@ object WebAuthn extends Logging {
     def create(ssg: SecureSecretGenerator): UserHandle = {
       UserHandle(ssg.createRandomSecret(Algorithm.HmacSHA512).data)
     }
+
+    def decode(input: String): UserHandle = UserHandle(fromBase64(input))
   }
 
   // Challenges SHOULD therefore be at least 16 bytes long.
   // https://www.w3.org/TR/webauthn-2/#sctn-cryptographic-challenges
-  case class Challenge(data: Vector[Byte])
+  case class Challenge(data: Vector[Byte]) {
+    def encode(): String = toBase64(data)
+  }
+
   object Challenge {
     def apply(data: Vector[Byte]): Challenge = {
       assert(data.length == 32)
@@ -54,16 +70,80 @@ object WebAuthn extends Logging {
     def create(ssg: SecureSecretGenerator): Challenge = {
       Challenge(ssg.createRandomSecret(Algorithm.HmacSHA256).data)
     }
+
+    def decode(input: String): Challenge = Challenge(fromBase64(input))
   }
 
-  // TODO MRB: just use base64 url everywhere
-  def toBase64(data: Vector[Byte]): String = Base64.getEncoder.encodeToString(data.toArray)
+  case class CredentialId(data: Vector[Byte]) {
+    def encode(): String = toBase64(data)
+  }
 
-  def fromBase64(data: String): Vector[Byte] = Base64.getDecoder.decode(data).toVector
+  object CredentialId {
+    def decode(input: String): CredentialId = CredentialId(fromBase64(input))
+  }
 
-  def fromBase64Url(data: String): Vector[Byte] = Base64.getUrlDecoder.decode(data).toVector
+  // https://webauthn4j.github.io/webauthn4j/en/#representation-of-an-authenticator
+  // TODO MRB: request attestation and store attestationStatement?
+  case class WebAuthn4jAuthenticator(
+      id: CredentialId,
+      attestedCredentialData: AttestedCredentialData,
+      transports: Set[AuthenticatorTransport],
+      counter: Long,
+      authenticatorExtensions: AuthenticationExtensionsAuthenticatorOutputs[RegistrationExtensionAuthenticatorOutput],
+      clientExtensions: AuthenticationExtensionsClientOutputs[RegistrationExtensionClientOutput]
+    ) {
+    def instance(): Authenticator = new AuthenticatorImpl(attestedCredentialData, null, counter, transports.asJava, clientExtensions, authenticatorExtensions)
 
-  def verifyRegistration(username: String, tfa: DBUser2fa, registration: WebAuthnPublicKeyRegistration): Attempt[DBUser2fa] = {
+    def encode(): String = {
+      Json.stringify(Json.toJson(this)(WebAuthn4jAuthenticator.format.writes))
+    }
+  }
+
+  object WebAuthn4jAuthenticator {
+    val format: Format[WebAuthn4jAuthenticator] = new Format[WebAuthn4jAuthenticator] {
+      override def reads(json: JsValue): JsResult[WebAuthn4jAuthenticator] = for {
+        id <- (json \ "id").validate[String].map(CredentialId.decode)
+        attestedCredentialData <- (json \ "attestedCredentialData").validate[String].map { v => attestedCredentialDataConverter.convert(fromBase64(v).toArray) }
+        transports <- (json \ "transports").validate[List[String]].map(_.map(AuthenticatorTransport.create)).map(_.toSet)
+        counter <- (json \ "counter").validate[Long]
+        authenticatorExtensions <- (json \ "authenticatorExtensions").validate[String].map { v =>
+          webAuthnObjectConverter.getCborConverter.readValue[AuthenticationExtensionsAuthenticatorOutputs[_]](fromBase64(v).toArray, classOf[AuthenticationExtensionsAuthenticatorOutputs[_]])
+        }
+        clientExtensions <- (json \ "clientExtensions").validate[String].map { v =>
+          webAuthnObjectConverter.getJsonConverter.readValue[AuthenticationExtensionsClientOutputs[_]](v, classOf[AuthenticationExtensionsClientOutputs[_]])
+        }
+      } yield {
+        WebAuthn4jAuthenticator(
+          id,
+          attestedCredentialData,
+          transports,
+          counter,
+          authenticatorExtensions.asInstanceOf[AuthenticationExtensionsAuthenticatorOutputs[RegistrationExtensionAuthenticatorOutput]],
+          clientExtensions.asInstanceOf[AuthenticationExtensionsClientOutputs[RegistrationExtensionClientOutput]])
+      }
+
+      override def writes(o: WebAuthn4jAuthenticator): JsValue = {
+        Json.obj(
+          "id" -> JsString(o.id.encode()),
+          "attestedCredentialData" -> JsString(toBase64(attestedCredentialDataConverter.convert(o.attestedCredentialData).toVector)),
+          "transports" -> JsArray(o.transports.map { t => JsString(t.toString) }.toList),
+          "counter" -> JsNumber(o.counter),
+          "authenticatorExtensions" -> JsString(toBase64(webAuthnObjectConverter.getCborConverter.writeValueAsBytes(o.authenticatorExtensions).toVector)),
+          "clientExtensions" -> JsString(webAuthnObjectConverter.getJsonConverter.writeValueAsString(o.authenticatorExtensions))
+        )
+      }
+    }
+
+    def decode(input: String): WebAuthn4jAuthenticator = {
+      Json.parse(input).as[WebAuthn4jAuthenticator](format.reads)
+    }
+  }
+
+  private def toBase64(data: Vector[Byte]): String = Base64.getEncoder.encodeToString(data.toArray)
+
+  private def fromBase64(data: String): Vector[Byte] = Base64.getDecoder.decode(data).toVector
+
+  def verifyRegistration(username: String, tfa: DBUser2fa, registration: WebAuthnPublicKeyRegistration, ssg: SecureSecretGenerator): Attempt[DBUser2fa] = {
     val challenge = new WebAuthn4JChallenge(tfa.webAuthnChallenge.get.data.toArray)
     val serverProperty = new ServerProperty(new Origin(origin), rpId, challenge, null)
 
@@ -84,6 +164,23 @@ object WebAuthn extends Logging {
       val registrationData = webAuthnManager.parse(registrationRequest)
       webAuthnManager.validate(registrationData, registrationParameters)
 
+      val authenticatorData = registrationData.getAttestationObject.getAuthenticatorData
+      val attestedCredentialData = authenticatorData.getAttestedCredentialData
+
+      val authenticator = WebAuthn4jAuthenticator(
+        CredentialId(attestedCredentialData.getCredentialId.toVector),
+        attestedCredentialData,
+        transports = registrationData.getTransports.asScala.toSet,
+        counter = authenticatorData.getSignCount,
+        authenticatorExtensions = authenticatorData.getExtensions,
+        clientExtensions = registrationData.getClientExtensions
+      )
+
+      tfa.copy(
+        webAuthnAuthenticators = tfa.webAuthnAuthenticators :+ authenticator,
+        webAuthnChallenge = Some(Challenge.create(ssg))
+      )
+
       throw new Error("TODO: save the results!!")
     } {
       case e: DataConversionException =>
@@ -95,47 +192,4 @@ object WebAuthn extends Logging {
         ClientFailure("Webauthn registration failure")
     }
   }
-
-//  def verifyRegistration(username: String, tfa: DBUser2fa, registration: WebAuthnPublicKeyRegistration)(implicit ec: ExecutionContext): Attempt[DBUser2fa] = for {
-//    // 7.1. Registering a New Credential https://w3c.github.io/webauthn/#sctn-registering-a-new-credential
-//
-//    //  5. Let JSONtext be the result of running UTF-8 decode on the value of response.clientDataJSON.
-//    //  6. Let C, the client data claimed as collected during the credential creation, be the result of running an implementation-specific JSON parser on JSONtext.
-//    clientDataJson <- parseClientDataJson(registration.clientDataJson)
-//
-//    //  7. Verify that the value of C.type is webauthn.create.
-//    _ <- check(clientDataJson.`type` == "webauthn.create", s"Unknown type ${clientDataJson.`type`}")
-//
-//    //  8. Verify that the value of C.challenge equals the base64url encoding of options.challenge.
-//    challenge = WebAuthn.Challenge(WebAuthn.fromBase64Url(clientDataJson.challenge))
-//    _ <- check(tfa.webAuthnChallenge.contains(challenge), "Incorrect challenge")
-//
-//    //  9. Verify that the value of C.origin matches the Relying Party's origin.
-//    // TODO MRB: how can we accurately know origin?
-//
-//    //  10. Let hash be the result of computing a hash over response.clientDataJSON using SHA-256.
-//    // TODO MRB: this
-//
-//    //  11. Perform CBOR decoding on the attestationObject field of the AuthenticatorAttestationResponse structure to obtain the attestation statement format fmt, the authenticator data authData, and the attestation statement attStmt.
-//    attestationObject <- parseAttestationObject(registration.attestationObject)
-//
-//    //  12. Verify that the rpIdHash in authData is the SHA-256 hash of the RP ID expected by the Relying Party.
-//    // TODO MRB: how can we accurately know the origin (domain) to calculate this
-//
-//    //  13. Verify that the UP bit of the flags in authData is set.
-//    _ <- check(attestationObject.authData.userPresent, "UP bit not set")
-//
-//    //  17. Verify that the "alg" parameter in the credential public key in authData matches the alg attribute of one of the items in options.pubKeyCredParams.
-//    _ <- check(attestationObject.authData.attestedCredentialData.nonEmpty, "No attestationCredentialData")
-//
-//    alg = attestationObject.authData.attestedCredentialData.get.credentialPublicKey.alg
-//    _ <- check(alg == supportedAlg, s"Unsupported alg $alg")
-//
-//    //  19. Determine the attestation statement format by performing a USASCII case-sensitive match on fmt against the set of supported WebAuthn Attestation Statement Format Identifier values
-//    _ <- check(attestationObject.fmt == "none", s"Unsupported attestation statement format ${attestationObject.fmt}")
-//
-//
-//
-//    _ <- Attempt.Left[DBUser2fa](UnsupportedOperationFailure("TODO: implement the rest of webauthn. fmt: " + attestationObject.fmt))
-//  } yield tfa
 }

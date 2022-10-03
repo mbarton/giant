@@ -75,7 +75,7 @@ class TwoFactorAuth(require2fa: Boolean, totp: Totp, ssg: SecureSecretGenerator)
     }
 
     case Some(registration: WebAuthnPublicKeyRegistration) =>
-      WebAuthn.verifyRegistration(username, user2fa, registration)
+      WebAuthn.verifyRegistration(username, user2fa, registration, ssg)
   }
 
   def checkGenesisRegistration(registration: Option[TfaRegistration], time: Epoch): Attempt[DBUser2fa] = registration match {

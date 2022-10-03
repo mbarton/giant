@@ -108,8 +108,8 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
 
     TfaRegistrationParameters(
       totpSecret = totpSecret.toBase32,
-      webAuthnUserHandle = WebAuthn.toBase64(webAuthnUserHandle.data),
-      webAuthnChallenge = WebAuthn.toBase64(webAuthnChallenge.data),
+      webAuthnUserHandle = webAuthnUserHandle.encode(),
+      webAuthnChallenge = webAuthnChallenge.encode(),
     )
   }
 
@@ -150,8 +150,8 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       users.setUser2fa(username, new2fa).map { _ =>
         TfaChallengeParameters(
           totp = existing2fa.activeTotpSecret.nonEmpty,
-          webAuthnCredentialIds = new2fa.webAuthnPublicKeys.map { k => WebAuthn.toBase64(k.id) },
-          webAuthnChallenge = WebAuthn.toBase64(challenge.data)
+          webAuthnCredentialIds = new2fa.webAuthnAuthenticators.map(_.id.encode()),
+          webAuthnChallenge = challenge.encode()
         )
       }
     }

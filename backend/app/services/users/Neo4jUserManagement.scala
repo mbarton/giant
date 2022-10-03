@@ -125,8 +125,8 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
         "registered", Boolean.box(user.registered),
         "granted", permissions.granted.map(_.toString).toArray,
         "inactiveTotpSecret", user.tfa.inactiveTotpSecret.map(_.toBase32).orNull,
-        "webAuthnUserHandle", user.tfa.webAuthnUserHandle.map(v => WebAuthn.toBase64(v.data)).orNull,
-        "webAuthnChallenge", user.tfa.webAuthnChallenge.map(v => WebAuthn.toBase64(v.data)).orNull,
+        "webAuthnUserHandle", user.tfa.webAuthnUserHandle.map(_.encode()).orNull,
+        "webAuthnChallenge", user.tfa.webAuthnChallenge.map(_.encode()).orNull,
       )
     )
 
@@ -424,9 +424,9 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
     List(
       "totpSecret" -> tfa.activeTotpSecret.map(_.toBase32).orNull,
       "inactiveTotpSecret" -> tfa.inactiveTotpSecret.map(_.toBase32).orNull,
-      "webAuthnUserHandle" -> tfa.webAuthnUserHandle.map(v => WebAuthn.toBase64(v.data)).orNull,
-      "webAuthnChallenge" -> tfa.webAuthnChallenge.map(v => WebAuthn.toBase64(v.data)).orNull,
-      "webAuthnPublicKeys" -> tfa.webAuthnPublicKeys.map(k => Json.stringify(Json.toJson(k))).asJava
+      "webAuthnUserHandle" -> tfa.webAuthnUserHandle.map(_.encode()).orNull,
+      "webAuthnChallenge" -> tfa.webAuthnChallenge.map(_.encode()).orNull,
+      "webAuthnAuthenticators" -> tfa.webAuthnAuthenticators.map(_.encode()).asJava
     )
   }
 }

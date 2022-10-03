@@ -69,7 +69,7 @@ object TestUserManagement {
         activeTotpSecret = None,
         inactiveTotpSecret = Some(sampleSecret),
         webAuthnUserHandle = Some(WebAuthn.UserHandle.create(ssg)),
-        webAuthnPublicKeys = List.empty,
+        webAuthnAuthenticators = List.empty,
         webAuthnChallenge = Some(WebAuthn.Challenge.create(ssg))
       )
     ),

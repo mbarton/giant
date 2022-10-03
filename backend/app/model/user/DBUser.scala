@@ -27,10 +27,10 @@ object DBUser {
       DBUser2fa(
         activeTotpSecret = user.get("totpSecret").optionally(v => Base32Secret(v.asString)),
         inactiveTotpSecret = user.get("inactiveTotpSecret").optionally(v => Base32Secret(v.asString)),
-        webAuthnUserHandle = user.get("webAuthnUserHandle").optionally(v => WebAuthn.UserHandle(WebAuthn.fromBase64(v.asString()))),
-        webAuthnPublicKeys = user.get("webAuthnPublicKeys").optionally(l =>
-          l.asList((v: Value) => Json.parse(v.asString()).as[WebAuthnPublicKey]).asScala.toList).getOrElse(List.empty),
-        webAuthnChallenge = user.get("webAuthnChallenge").optionally(v => WebAuthn.Challenge(WebAuthn.fromBase64(v.asString()))),
+        webAuthnUserHandle = user.get("webAuthnUserHandle").optionally(v => WebAuthn.UserHandle.decode(v.asString())),
+        webAuthnAuthenticators = user.get("webAuthnAuthenticators").optionally(l =>
+          l.asList((v: Value) => WebAuthn.WebAuthn4jAuthenticator.decode(v.asString())).asScala.toList).getOrElse(List.empty),
+        webAuthnChallenge = user.get("webAuthnChallenge").optionally(v => WebAuthn.Challenge.decode(v.asString())),
       )
     )
   }
