@@ -134,6 +134,7 @@ lazy val backend = (project in file("backend"))
       "com.sun.mail" % "javax.mail" % "1.6.2",
       "org.jsoup" % "jsoup" % "1.11.3",
       "com.gu" %% "pan-domain-auth-verification" % "0.8.0",
+      "com.webauthn4j" % "webauthn4j-core" % "0.20.4.RELEASE",
 
       // Libraries whose use are potentially contentious
 

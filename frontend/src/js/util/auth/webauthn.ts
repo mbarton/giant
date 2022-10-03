@@ -10,7 +10,9 @@ export async function registerSecurityKey(challenge: string, name: string, userH
         publicKey: {
             challenge: Uint8Array.from(atob(challenge), c => c.charCodeAt(0)),
             rp: {
-                name
+                name,
+                // TODO MRB: get this from client config?
+                id: 'localhost:3000'
             },
             user: {
                 id: Uint8Array.from(atob(userHandle), c => c.charCodeAt(0)),
