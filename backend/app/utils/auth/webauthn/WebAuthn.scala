@@ -170,7 +170,7 @@ object WebAuthn extends Logging {
       val authenticator = WebAuthn4jAuthenticator(
         CredentialId(attestedCredentialData.getCredentialId.toVector),
         attestedCredentialData,
-        transports = registrationData.getTransports.asScala.toSet,
+        transports = (Option(registrationData.getTransports)).map(_.asScala.toSet).getOrElse(Set.empty),
         counter = authenticatorData.getSignCount,
         authenticatorExtensions = authenticatorData.getExtensions,
         clientExtensions = registrationData.getClientExtensions
@@ -180,8 +180,6 @@ object WebAuthn extends Logging {
         webAuthnAuthenticators = tfa.webAuthnAuthenticators :+ authenticator,
         webAuthnChallenge = Some(Challenge.create(ssg))
       )
-
-      throw new Error("TODO: save the results!!")
     } {
       case e: DataConversionException =>
         logger.warn(s"Webauthn registration parse failure for $username", e)
