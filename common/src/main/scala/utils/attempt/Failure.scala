@@ -97,7 +97,18 @@ case class AuthenticationFailure(actualMessage: String, override val cause: Opti
 
 case class MissingPermissionFailure(msg: String) extends Failure
 
-case class SecondFactorRequired(msg: String) extends Failure
+sealed trait SupportedSecondFactor {
+  def clientCode: String
+}
+object SupportedSecondFactor {
+  case object Totp extends SupportedSecondFactor {
+    override def clientCode: String = "Pfi2fa" // for compatibility with older versions of Giant
+  }
+  case class Webauthn(credentialId: String) extends SupportedSecondFactor {
+    override def clientCode: String = s"PfiWebAuthn credentialId=${credentialId}"
+  }
+}
+case class SecondFactorRequired(msg: String, supported2fa: List[SupportedSecondFactor]) extends Failure
 
 case class PanDomainCookieInvalid(override val msg: String, reportAsFailure: Boolean) extends Failure
 

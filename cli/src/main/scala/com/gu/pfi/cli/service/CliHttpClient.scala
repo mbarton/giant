@@ -115,7 +115,7 @@ class CliHttpClient(client: OkHttpClient, credsStore: CliCredentialsStore, baseU
         case (Some(token), None) =>
           saveCredentials(CliCredentials(token))
 
-        case (_, Some("Pfi2fa")) =>
+        case (_, Some(value)) if value.contains("Pfi2fa") =>
           val tfaToken = readParam("2FA code")
           requestToken(Some(username), Some(password), Some(tfaToken))
 

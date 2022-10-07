@@ -76,6 +76,7 @@ object WebAuthn extends Logging {
 
   case class CredentialId(data: Vector[Byte]) {
     def encode(): String = toBase64(data)
+    def encodeUrl(): String = toBase64Url(data)
   }
 
   object CredentialId {
@@ -142,6 +143,8 @@ object WebAuthn extends Logging {
   private def toBase64(data: Vector[Byte]): String = Base64.getEncoder.encodeToString(data.toArray)
 
   private def fromBase64(data: String): Vector[Byte] = Base64.getDecoder.decode(data).toVector
+
+  private def toBase64Url(bytes: Vector[Byte]): String = Base64.getUrlEncoder.withoutPadding().encodeToString(bytes.toArray  )
 
   def verifyRegistration(username: String, tfa: DBUser2fa, registration: WebAuthnPublicKeyRegistration, ssg: SecureSecretGenerator): Attempt[DBUser2fa] = {
     val challenge = new WebAuthn4JChallenge(tfa.webAuthnChallenge.get.data.toArray)

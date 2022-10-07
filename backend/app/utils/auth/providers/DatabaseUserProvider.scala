@@ -147,7 +147,7 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
 
   private def buildAndSave2faConfiguration(username: String, existing2fa: DBUser2fa): Attempt[TfaChallengeParameters] = {
     if(config.require2FA && existing2fa.activeTotpSecret.isEmpty) {
-      Attempt.Left(SecondFactorRequired("2FA enrollment is required"))
+      Attempt.Left(MisconfiguredAccount("2FA enrollment is required"))
     } else {
       val challenge = WebAuthn.Challenge.create(ssg)
       val new2fa = existing2fa.copy(webAuthnChallenge = Some(challenge))

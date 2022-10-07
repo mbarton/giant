@@ -38,9 +38,9 @@ object FailureToResultMapper extends Logging {
       case MisconfiguredAccount(msg) =>
         logUserAndMessage(user, s"Misconfigured account: $msg")
         Results.Forbidden(msg)
-      case SecondFactorRequired(msg) =>
+      case SecondFactorRequired(msg, supported2fa) =>
         logUserAndMessage(user, s"Unauthorised, second factor auth required: $msg")
-        Results.Unauthorized(msg).withHeaders(HeaderNames.WWW_AUTHENTICATE -> "Pfi2fa")
+        Results.Unauthorized(msg).withHeaders(HeaderNames.WWW_AUTHENTICATE -> supported2fa.map(_.clientCode).mkString(", "))
       case PanDomainCookieInvalid(msg, _) =>
         logUserAndMessage(user, s"Pan domain login failure: $msg")
         Results.Unauthorized(msg).withHeaders(HeaderNames.WWW_AUTHENTICATE -> "Panda")
@@ -128,7 +128,7 @@ class CloudWatchReportingFailureToResultMapper(metricsService: MetricsService) e
     // We also use a 401 to indicate to clients that the user exists but they have to present their 2fa code
     case PanDomainCookieInvalid(_, false) |
          AuthenticationFailure(_, _, false) |
-         SecondFactorRequired(_) |
+         SecondFactorRequired(_, _) |
          // Not found can occur during normal usage, for example clicking the path to an ingestion you can't see
          // from a file within that ingestion that is shared with you via a workspace
          NotFoundFailure(_) |

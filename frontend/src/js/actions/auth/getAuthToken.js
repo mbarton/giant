@@ -15,7 +15,7 @@ export function getAuthToken(username, password, tfaCode) {
                     dispatch(receiveToken(authHeader));
                     clearAllErrors()(dispatch);
                     clearAllWarnings()(dispatch);
-                } else if (status === 401 && authenticate === 'Pfi2fa') {
+                } else if (status === 401 && (authenticate.includes('Pfi2fa') || authenticate.includes('PfiWebAuthn'))) {
                     response.text().then(text => {
                         dispatch(require2fa(text));
                     });
