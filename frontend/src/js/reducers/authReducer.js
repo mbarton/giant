@@ -31,6 +31,7 @@ export default function auth(state = {
         case 'AUTH_REQUIRE_2FA':
             return Object.assign({}, state, {
                 require2fa: true,
+                tfaMethods: action.methods,
                 requesting: false,
                 errors: [action.message]
             });

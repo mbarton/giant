@@ -24,6 +24,7 @@ class Login extends React.Component {
         genesisSetupComplete: PropTypes.bool.isRequired,
         require2fa: PropTypes.bool.isRequired,
         requirePanda: PropTypes.bool.isRequired,
+        tfaMethods: PropTypes.arrayOf(PropTypes.object),
         config: config
     };
 
@@ -47,7 +48,7 @@ class Login extends React.Component {
     }
 
     componentDidUpdate(prevProps) {
-        if (this.props.require2fa && !prevProps.require2fa) {
+        if (this.props.require2fa && !prevProps.require2fa && this.tfaInput) {
             this.tfaInput.focus();
         }
     }
@@ -157,26 +158,45 @@ class Login extends React.Component {
     }
 
     render2fa() {
+        const totpSupported = this.props.tfaMethods
+            .some(({ type }) => type === 'Pfi2fa');
+
+        const webAuthnCredentialIds = this.props.tfaMethods
+            .filter(({ type }) => type === 'PfiWebAuthn')
+            .map(({ credentialId }) => credentialId);
+
         return (
             <div className='app__page app__page--centered'>
                 <form className='form' onSubmit={this.login}>
                     <h2 className='form__title'>Login</h2>
-                    <div>
-                        <label className='form__label' htmlFor='#tfa'>Authentication Code</label>
-                        <input
-                            ref={input => {this.tfaInput = input;}}
-                            className='form__field'
-                            id='tfa'
-                            name='tfa'
-                            type='text'
-                            placeholder='Authentication Code'
-                            value={this.state.tfaCode}
-                            onChange={e => this.updateTfaCode(e)}
-                            autoComplete='off'
-                            required
-                            autoFocus
-                        />
-                    </div>
+                    {totpSupported ?
+                        (
+                            <div className='form__section'>
+                                <label className='form__label' htmlFor='#tfa'>Authentication Code</label>
+                                <input
+                                    ref={input => {this.tfaInput = input;}}
+                                    className='form__field'
+                                    id='tfa'
+                                    name='tfa'
+                                    type='text'
+                                    placeholder='Authentication Code'
+                                    value={this.state.tfaCode}
+                                    onChange={e => this.updateTfaCode(e)}
+                                    autoComplete='off'
+                                    required
+                                    autoFocus
+                                />
+                            </div>
+                        )
+                    : false}
+                    {webAuthnCredentialIds.length > 0 ?
+                        (
+                            <div className='form__section'>
+                                <label className='form__label' htmlFor='#webauthn'>Security Key</label>
+                                <button className="btn" id="webauthn">Use Security Key</button>
+                            </div>
+                        )
+                    : false}
                     {this.renderActions()}
                 </form>
             </div>
@@ -253,7 +273,7 @@ class Login extends React.Component {
 }
 
 function mapStateToProps(state) {
-    const { requesting, errors, require2fa, requirePanda } = state.auth;
+    const { requesting, errors, require2fa, requirePanda, tfaMethods } = state.auth;
     const { genesisSetupComplete } = state.users;
     const { config } = state.app;
 
@@ -263,7 +283,8 @@ function mapStateToProps(state) {
         errors,
         genesisSetupComplete,
         require2fa,
-        requirePanda
+        requirePanda,
+        tfaMethods
     };
 }
 

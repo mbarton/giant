@@ -2,6 +2,20 @@ import jwt_decode from 'jwt-decode';
 import {getToken} from '../../services/AuthApi';
 import {clearAllErrors, clearAllWarnings} from '../problems';
 
+function parseAuthenticateHeader(authenticate) {
+    return authenticate.split(',').map(part => {
+        const [type, ...params] = part.trim().split(' ');
+
+        return {
+            type,
+            ...params.reduce((acc, param) => {
+                const [key, value] = param.split("=");
+                return { ...acc, [key.trim()]: value.trim() };
+            }, {})
+        };
+    });
+}
+
 export function getAuthToken(username, password, tfaCode) {
     return dispatch => {
         dispatch(requestToken(username));
@@ -17,7 +31,7 @@ export function getAuthToken(username, password, tfaCode) {
                     clearAllWarnings()(dispatch);
                 } else if (status === 401 && (authenticate.includes('Pfi2fa') || authenticate.includes('PfiWebAuthn'))) {
                     response.text().then(text => {
-                        dispatch(require2fa(text));
+                        dispatch(require2fa(text, parseAuthenticateHeader(authenticate)));
                     });
                 } else if (status === 401 && authenticate === 'Panda') {
                     response.text().then(text => {
@@ -57,10 +71,11 @@ export function receiveToken(authHeader) {
     };
 }
 
-function require2fa(message) {
+function require2fa(message, methods) {
     return {
         type: 'AUTH_REQUIRE_2FA',
-        message:    message,
+        message,
+        methods, 
         receivedAt: Date.now()
     };
 }
