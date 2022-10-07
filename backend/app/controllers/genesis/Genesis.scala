@@ -1,10 +1,12 @@
 package controllers.genesis
 
-import play.api.libs.json.{JsBoolean, Json}
+import model.user.DBUser2fa
+import play.api.libs.json.{JsBoolean, JsString, Json}
 import play.api.mvc.ControllerComponents
 import services.users.UserManagement
 import utils.attempt._
 import utils.auth.providers.UserProvider
+import utils.auth.totp.{SecureSecretGenerator, Totp}
 import utils.controller.NoAuthApiController
 import utils.{Epoch, Logging}
 
@@ -39,16 +41,18 @@ class Genesis(override val controllerComponents: ControllerComponents, userProvi
   }
 
   def checkSetup = ApiAction.attempt {
-    getSetupComplete.map {
+    getSetupComplete.flatMap {
       case true =>
-        Ok(Json.toJson(Json.obj("setupComplete" -> true)))
-
-      case false =>
-        val fields = userProvider.genesisUserConfig() ++ Map(
-          "setupComplete" -> JsBoolean(false)
+        Attempt.Right(
+          Ok(Json.toJson(Json.obj("setupComplete" -> true)))
         )
 
-        Ok(Json.toJson(fields))
+      case false =>
+        userProvider.genesisUserConfig().map { genesisConfig =>
+          Ok(Json.toJson(
+            Map("setupComplete" -> JsBoolean(false)) ++ genesisConfig
+          ))
+        }
     }
   }
 

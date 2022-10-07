@@ -19,12 +19,6 @@ sealed trait TfaRegistration
 case class TotpCodeRegistration(code: String) extends TfaRegistration
 
 /**
- * Sent to the server when registering the initial admin user
- * This operation is special as it uses the secret from the client rather than one generated on the server
- */
-case class TotpGenesisRegistration(secret: String, code: String) extends TfaRegistration
-
-/**
  * Sent to the server when registering a WebAuthn public key (eg Yubikey, iOS passkey)
  * All fields are base64 encoded
  */
@@ -32,14 +26,13 @@ case class WebAuthnPublicKeyRegistration(id: String, clientDataJson: String, att
 
 object TfaRegistration {
   private implicit val totpCodeRegistrationFormat: Format[TotpCodeRegistration] = Json.format[TotpCodeRegistration]
-  private implicit val totpGeneisRegistrationFormat: Format[TotpGenesisRegistration] = Json.format[TotpGenesisRegistration]
   private implicit val webAuthnPublicKeyRegistration: Format[WebAuthnPublicKeyRegistration] = Json.format[WebAuthnPublicKeyRegistration]
 
   implicit val format: Format[TfaRegistration] = new Format[TfaRegistration] {
     override def reads(json: JsValue): JsResult[TfaRegistration] = {
       (json \ "type").validate[String].flatMap {
         case "totp" =>
-          json.validate[TotpGenesisRegistration].recoverWith(_ => json.validate[TotpCodeRegistration])
+          json.validate[TotpCodeRegistration]
 
         case "webauthn" =>
           json.validate[WebAuthnPublicKeyRegistration]
@@ -50,9 +43,6 @@ object TfaRegistration {
 
     override def writes(r: TfaRegistration): JsValue = r match {
       case r: TotpCodeRegistration =>
-        Json.toJson(r).as[JsObject] ++ Json.obj("type" -> "totp")
-
-      case r: TotpGenesisRegistration =>
         Json.toJson(r).as[JsObject] ++ Json.obj("type" -> "totp")
 
       case r: WebAuthnPublicKeyRegistration =>

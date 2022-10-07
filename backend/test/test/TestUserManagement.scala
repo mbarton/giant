@@ -96,6 +96,7 @@ object TestUserManagement {
 
 class TestUserManagement(initialUsers: TestUserManagement.Storage) extends UserManagement {
   private var users: TestUserManagement.Storage = initialUsers
+  private var genesisUser2fa: Option[DBUser2fa] = None
 
   def getAllUsers: List[DBUser] = users.values.toList.map(_.dbUser)
 
@@ -182,6 +183,15 @@ class TestUserManagement(initialUsers: TestUserManagement.Storage) extends UserM
 
   override def setUser2fa(username: String, tfa: DBUser2fa): Attempt[Unit] =
     updateField(username, r => r.copy(dbUser = r.dbUser.copy(tfa = tfa))).map(_ => ())
+
+  override def getGenesisRegistration2fa(): Attempt[DBUser2fa] = {
+    genesisUser2fa.toAttempt(Attempt.Left(UnknownFailure(new IllegalStateException("Missing Genesis user 2fa config"))))
+  }
+
+  def setGenesisRegistration2fa(tfa: DBUser2fa): Attempt[Unit] = {
+    genesisUser2fa = Some(tfa)
+    Attempt.Right(())
+  }
 
   private def updateField(username: String, f: TestUserRegistration => TestUserRegistration): Attempt[TestUserRegistration] = {
     val maybeUpdatedUser = users

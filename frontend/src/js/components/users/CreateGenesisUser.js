@@ -157,7 +157,6 @@ export class CreateGenesisUserUnconnected extends React.Component {
 
         this.submitDatabase({
             type: 'totp',
-            secret: this.props.totpSecret,
             code: this.state.tfaCode
         });
     }

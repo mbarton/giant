@@ -8,15 +8,12 @@ import model.user._
 import org.neo4j.driver.v1.Values.parameters
 import org.neo4j.driver.v1.exceptions.ClientException
 import org.neo4j.driver.v1.{Driver, Record, StatementResult}
-import play.api.libs.json.Json
 import services.Neo4jQueryLoggingConfig
 import services.annotations.Annotations
 import services.index.{Index, Pages}
 import services.manifest.Manifest
 import utils._
 import utils.attempt.{Attempt, ClientFailure, Failure, IllegalStateFailure, Neo4JFailure, NotFoundFailure, UnknownFailure, UserDoesNotExistFailure}
-import utils.auth.totp.Secret
-import utils.auth.webauthn.WebAuthn
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
@@ -314,6 +311,33 @@ class Neo4jUserManagement(neo4jDriver: Driver, executionContext: ExecutionContex
   // TODO MRB: should we split out add/remove key to separate operations?
   override def setUser2fa(username: String, tfa: DBUser2fa): Attempt[Unit] =
     updateUser(username, getUser2faFields(tfa): _*).map(_ => ())
+
+  def getGenesisRegistration2fa(): Attempt[DBUser2fa] = attemptTransaction { tx =>
+    tx.run(
+      """
+        | MATCH (tfa: GenesisUser2fa)
+        | RETURN tfa
+        |""".stripMargin).flatMap { r =>
+      r.single().hasKeyOrFailure("tfa", NotFoundFailure("Missing GenesisUser2fa")).map { result =>
+        DBUser2fa.fromNeo4jValue(result.get("tfa"))
+      }
+    }
+  }
+
+  def setGenesisRegistration2fa(tfa: DBUser2fa): Attempt[Unit] = attemptTransaction { tx =>
+    tx.run(
+      """
+        | MERGE (tfa: GenesisUser2fa)
+        | SET tfa.inactiveTotpSecret = {inactiveTotpSecret}
+        | SET tfa.webAuthnUserHandle = {webAuthnUserHandle}
+        | SET tfa.webAuthnChallenge = {webAuthnChallenge}
+        |""".stripMargin, parameters(
+        "inactiveTotpSecret", tfa.inactiveTotpSecret.map(_.toBase32).orNull,
+        "webAuthnUserHandle", tfa.webAuthnUserHandle.map(_.encode()).orNull,
+        "webAuthnChallenge", tfa.webAuthnChallenge.map(_.encode()).orNull
+      )
+    ).map { _ => () }
+  }
 
   private def singleUser(username: String, statementResult: StatementResult, field: String = "user"): Attempt[DBUser] = {
     statementResult.hasKeyOrFailure(field, UserDoesNotExistFailure(username)).map { result =>

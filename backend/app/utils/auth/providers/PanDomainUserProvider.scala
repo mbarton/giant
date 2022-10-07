@@ -26,7 +26,7 @@ class PanDomainUserProvider(val config: PandaAuthConfig, currentPublicKey: () =>
     "loginUrl" -> JsString(config.loginUrl)
   )
 
-  override def genesisUserConfig(): Map[String, JsValue] = Map.empty
+  override def genesisUserConfig(): Attempt[Map[String, JsValue]] = Attempt.Right(Map.empty)
 
   override def authenticate(request: Request[AnyContent], time: Epoch): Attempt[PartialUser] = {
 

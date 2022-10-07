@@ -28,16 +28,16 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     "totpIssuer" -> JsString(config.totpIssuer)
   )
 
-  override def genesisUserConfig(): Map[String, JsValue] = {
-    val totpSecret = ssg.createRandomSecret(totp.algorithm)
-    val webAuthnChallenge = WebAuthn.Challenge.create(ssg)
-    val webAuthnUserHandle = WebAuthn.UserHandle.create(ssg)
+  override def genesisUserConfig(): Attempt[Map[String, JsValue]] = {
+    val tfa = DBUser2fa.initial(ssg, totp)
 
-    Map(
-      "totpSecret" -> JsString(totpSecret.toBase32),
-      "webAuthnChallenge" -> JsString(webAuthnChallenge.encode()),
-      "webAuthnUserHandle" -> JsString(webAuthnUserHandle.encode())
-    )
+    users.setGenesisRegistration2fa(tfa).map { _ =>
+      Map(
+        "totpSecret" -> JsString(tfa.inactiveTotpSecret.get.toBase32),
+        "webAuthnChallenge" -> JsString(tfa.webAuthnChallenge.get.encode()),
+        "webAuthnUserHandle" -> JsString(tfa.webAuthnUserHandle.get.encode())
+      )
+    }
   }
 
   override def authenticate(request: Request[AnyContent], time: Epoch): Attempt[PartialUser] =
@@ -48,11 +48,12 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       userData <- request.validate[NewGenesisUser].toAttempt
       encryptedPassword <- passwordHashing.hash(userData.password)
       _ <- passwordValidator.validate(userData.password)
-      tfa <- tfa.checkGenesisRegistration(userData.tfa, time)
+      genesisTfa <- users.getGenesisRegistration2fa()
+      userTfa <- tfa.checkRegistration(userData.username, genesisTfa, userData.tfa, time)
       // We will immediately register after creating
-      user = DBUser(userData.username, None, None, invalidationTime = None, registered = false, tfa)
+      user = DBUser(userData.username, None, None, invalidationTime = None, registered = false, userTfa)
       _ <- users.createUser(user, UserPermissions.bigBoss)
-      registered <- users.registerUser(userData.username, userData.displayName, Some(encryptedPassword), Some(tfa))
+      registered <- users.registerUser(userData.username, userData.displayName, Some(encryptedPassword), Some(userTfa))
     } yield registered.toPartial
   }
 

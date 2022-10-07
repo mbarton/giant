@@ -25,6 +25,8 @@ trait UserManagement {
   def removeUserCollection(user: String, collection: String): Attempt[Unit]
   def setPermissions(user: String, permissions: UserPermissions): Attempt[Unit]
   def setUser2fa(user: String, tfa: DBUser2fa): Attempt[Unit]
+  def getGenesisRegistration2fa(): Attempt[DBUser2fa]
+  def setGenesisRegistration2fa(tfa: DBUser2fa): Attempt[Unit]
   def canSeeCollection(user: String, collection: Uri)(implicit ec: ExecutionContext): Attempt[Boolean] =
     getVisibleCollectionUrisForUser(user).map(_.contains(collection.value))
 

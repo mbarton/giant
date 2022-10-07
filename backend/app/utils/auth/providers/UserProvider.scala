@@ -15,7 +15,7 @@ trait UserProvider {
   def config: AuthProviderConfig
   /** the configuration that is shipped to the UI for enhancements like client side minimum password length checks etc. **/
   def clientConfig: Map[String, JsValue]
-  def genesisUserConfig(): Map[String, JsValue]
+  def genesisUserConfig(): Attempt[Map[String, JsValue]]
   /** authenticate a user based on the HTTP request and the current time (for any 2FA calculations) **/
   def authenticate(request: Request[AnyContent], time: Epoch): Attempt[PartialUser]
   /** create an all powerful initial user **/

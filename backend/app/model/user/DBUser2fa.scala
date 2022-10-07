@@ -1,9 +1,10 @@
 package model.user
 
-import com.webauthn4j.data.AuthenticatorTransport
-import play.api.libs.json.{Format, JsResult, JsValue, Json}
+import model._
+import org.neo4j.driver.v1.Value
 import utils.auth.totp._
 import utils.auth.webauthn.WebAuthn
+import scala.collection.JavaConverters._
 
 // Originally we just had totpSecret as a field on DBUser but we need a lot more state to handle webauthn
 // It's cleaner to store that all separately and allows us to "repair" write in the additional fields for existing users
@@ -31,5 +32,14 @@ object DBUser2fa {
     webAuthnUserHandle = Some(WebAuthn.UserHandle.create(ssg)),
     webAuthnAuthenticators = List.empty,
     webAuthnChallenge = Some(WebAuthn.Challenge.create(ssg))
+  )
+
+  def fromNeo4jValue(user: Value): DBUser2fa = DBUser2fa(
+    activeTotpSecret = user.get("totpSecret").optionally(v => Base32Secret(v.asString)),
+    inactiveTotpSecret = user.get("inactiveTotpSecret").optionally(v => Base32Secret(v.asString)),
+    webAuthnUserHandle = user.get("webAuthnUserHandle").optionally(v => WebAuthn.UserHandle.decode(v.asString())),
+    webAuthnAuthenticators = user.get("webAuthnAuthenticators").optionally(l =>
+      l.asList((v: Value) => WebAuthn.WebAuthn4jAuthenticator.decode(v.asString())).asScala.toList).getOrElse(List.empty),
+    webAuthnChallenge = user.get("webAuthnChallenge").optionally(v => WebAuthn.Challenge.decode(v.asString())),
   )
 }

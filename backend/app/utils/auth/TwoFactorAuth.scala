@@ -1,9 +1,9 @@
 package utils.auth
 
-import model.frontend.user.{TfaChallengeResponse, TfaRegistration, TotpCodeChallengeResponse, TotpCodeRegistration, TotpGenesisRegistration, WebAuthnPublicKeyRegistration}
+import model.frontend.user._
 import model.user.{DBUser, DBUser2fa}
 import utils.attempt.{Attempt, LoginFailure, MisconfiguredAccount, SecondFactorRequired, UnknownFailure}
-import utils.auth.totp.{Base32Secret, SecureSecretGenerator, Totp}
+import utils.auth.totp.{SecureSecretGenerator, Totp}
 import utils.auth.webauthn.WebAuthn
 import utils.{Epoch, Logging}
 
@@ -76,19 +76,5 @@ class TwoFactorAuth(require2fa: Boolean, totp: Totp, ssg: SecureSecretGenerator)
 
     case Some(registration: WebAuthnPublicKeyRegistration) =>
       WebAuthn.verifyRegistration(username, user2fa, registration, ssg)
-  }
-
-  def checkGenesisRegistration(registration: Option[TfaRegistration], time: Epoch): Attempt[DBUser2fa] = registration match {
-    case None if !require2fa =>
-      Attempt.Right(DBUser2fa.initial(ssg, totp))
-
-    case Some(TotpGenesisRegistration(secretString, code)) =>
-      val secret = Base32Secret(secretString)
-
-      totp.checkCodeFatal(secret, code, time).map { _ =>
-        DBUser2fa.initial(ssg, totp).copy(
-          activeTotpSecret = Some(secret)
-        )
-      }
   }
 }

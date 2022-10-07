@@ -3,10 +3,6 @@ package model.user
 import model._
 import model.frontend.user.PartialUser
 import org.neo4j.driver.v1.Value
-import play.api.libs.json.Json
-import utils.auth.totp.Base32Secret
-import utils.auth.webauthn.WebAuthn
-import scala.collection.JavaConverters._
 
 /* User model for representation in the database */
 case class DBUser(username: String, displayName: Option[String], password: Option[BCryptPassword],
@@ -24,14 +20,7 @@ object DBUser {
       user.get("password").optionally(v => BCryptPassword.apply(v.asString)),
       user.get("invalidationTime").optionally(_.asLong),
       user.get("registered").optionally(_.asBoolean).getOrElse(false),
-      DBUser2fa(
-        activeTotpSecret = user.get("totpSecret").optionally(v => Base32Secret(v.asString)),
-        inactiveTotpSecret = user.get("inactiveTotpSecret").optionally(v => Base32Secret(v.asString)),
-        webAuthnUserHandle = user.get("webAuthnUserHandle").optionally(v => WebAuthn.UserHandle.decode(v.asString())),
-        webAuthnAuthenticators = user.get("webAuthnAuthenticators").optionally(l =>
-          l.asList((v: Value) => WebAuthn.WebAuthn4jAuthenticator.decode(v.asString())).asScala.toList).getOrElse(List.empty),
-        webAuthnChallenge = user.get("webAuthnChallenge").optionally(v => WebAuthn.Challenge.decode(v.asString())),
-      )
+      DBUser2fa.fromNeo4jValue(user)
     )
   }
 }
