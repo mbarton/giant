@@ -30,9 +30,13 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
 
   override def genesisUserConfig(): Map[String, JsValue] = {
     val totpSecret = ssg.createRandomSecret(totp.algorithm)
+    val webAuthnChallenge = WebAuthn.Challenge.create(ssg)
+    val webAuthnUserHandle = WebAuthn.UserHandle.create(ssg)
 
     Map(
-      "totpSecret" -> JsString(totpSecret.toBase32)
+      "totpSecret" -> JsString(totpSecret.toBase32),
+      "webAuthnChallenge" -> JsString(webAuthnChallenge.encode()),
+      "webAuthnUserHandle" -> JsString(webAuthnUserHandle.encode())
     )
   }
 

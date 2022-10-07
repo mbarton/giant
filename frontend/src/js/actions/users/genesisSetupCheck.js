@@ -23,6 +23,8 @@ function receiveSetupCheck(res) {
         type:          'GENESIS_SETUP_CHECK_RECEIVE',
         setupComplete: res.setupComplete,
         totpSecret:    res.totpSecret,
+        webAuthnChallenge: res.webAuthnChallenge,
+        webAuthnUserHandle: res.webAuthnUserHandle,
         receivedAt:    Date.now()
     };
 }

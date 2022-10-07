@@ -11,7 +11,9 @@ export default function users(state = {
         case 'GENESIS_SETUP_CHECK_RECEIVE':
             return Object.assign({}, state, {
                 genesisSetupComplete: action.setupComplete,
-                genesisTotpSecret: action.totpSecret
+                genesisTotpSecret: action.totpSecret,
+                genesisWebauthnChallenge: action.webAuthnChallenge,
+                genesisWebAuthnUserHandle: action.webAuthnUserHandle
             });
 
         case 'GENESIS_CREATE_USER_REQUEST':

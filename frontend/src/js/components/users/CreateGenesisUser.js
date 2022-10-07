@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { ProgressAnimation } from '../UtilComponents/ProgressAnimation';
 import {Setup2Fa} from './Setup2Fa';
 import { config } from '../../types/Config';
+import { registerSecurityKey } from '../../util/auth/webauthn';
 
 import {connect} from 'react-redux';
 import {bindActionCreators} from 'redux';
@@ -60,18 +61,11 @@ export class CreateGenesisUserUnconnected extends React.Component {
         return errors;
     }
 
-    submitDatabase = (e) => {
-        e.preventDefault();
-
+    submitDatabase = (tfa) => {
         if (!this.state.hasCompletedPhase1 && this.canContinue()) {
             this.setState({hasCompletedPhase1: true});
 
-        } else if (this.state.hasCompletedPhase1 && this.canFinish()) {
-            const tfa = {
-                type: 'totp',
-                secret: this.props.totpSecret,
-                code: this.state.tfaCode
-            };
+        } else if (this.state.hasCompletedPhase1 && (this.canFinish() || tfa.type === 'webauthn')) {
             this.props.createDatabaseUser(this.state.username, this.state.displayName, this.state.password, tfa);
         }
     };
@@ -130,7 +124,7 @@ export class CreateGenesisUserUnconnected extends React.Component {
     renderUsernameAndPassword() {
         return (
             <div className='app__page app__page--centered'>
-                <form className='form' onSubmit={this.submitDatabase}>
+                <form className='form' onSubmit={this.onSubmit}>
                     <h2>Create Genesis User</h2>
                     {this.renderField('username', 'Username', 'text', true)}
                     {this.renderField('displayName', 'Display Name')}
@@ -142,12 +136,39 @@ export class CreateGenesisUserUnconnected extends React.Component {
         );
     }
 
+    registerSecurityKey = (e) => {
+        e.preventDefault();
+
+        const totpIssuer = this.props.config.authConfig.totpIssuer;
+        const instance = this.props.config.label || window.location.hostname;
+        const name = `${totpIssuer} (${instance})`;
+
+        registerSecurityKey(this.props.webAuthnChallenge, name, this.props.webAuthnUserHandle, this.state.username, this.state.displayName)
+            .then(registration => {
+                this.submitDatabase({
+                    type: 'webauthn',
+                    ...registration
+                });
+            });
+    }
+
+    onSubmit = (e) => {
+        e.preventDefault();
+
+        this.submitDatabase({
+            type: 'totp',
+            secret: this.props.totpSecret,
+            code: this.state.tfaCode
+        });
+    }
+
     render2FA() {
         return (
             <div className='app__page app__page--centered'>
-                <form className='form' noValidate onSubmit={this.submitDatabase}>
+                <form className='form' noValidate onSubmit={this.onSubmit}>
                     <h2>Setup Two Factor Authentication</h2>
-                    <div>
+                    <div className='form__section'>
+                        <h3 className='form__subtitle'>Authenticator App</h3>
                         <Setup2Fa
                             username={this.state.username}
                             secret={this.props.totpSecret}
@@ -155,14 +176,20 @@ export class CreateGenesisUserUnconnected extends React.Component {
                             />
                         {this.renderField('tfaCode', 'Authentication Code', 'text', true)}
                         {this.renderActions()}
-                        {
-                            this.props.config.authConfig.require2FA
-                            ?
-                                false
-                            :
-                                <button className='users__skip-2fa' type='button' onClick={this.skip2fa}>Skip this step</button>
-                        }
                     </div>
+                    <div className='form__section'>
+                        <h3 className='form__subtitle'>Security Key</h3>
+                        <button className='btn' onClick={this.registerSecurityKey}>Register</button>
+                    </div>
+                    {
+                        this.props.config.authConfig.require2FA
+                        ?
+                            false
+                        :
+                            <div className='form__section'>
+                                <button className='users__skip-2fa' type='button' onClick={this.skip2fa}>Skip this step</button>
+                            </div>
+                    }
                 </form>
             </div>
         );
@@ -226,7 +253,9 @@ function mapStateToProps(state) {
         config: state.app.config,
         requesting: users.genesisSetupRequesting,
         errors: users.errors,
-        totpSecret: users.genesisTotpSecret
+        totpSecret: users.genesisTotpSecret,
+        webAuthnChallenge: users.genesisWebauthnChallenge,
+        webAuthnUserHandle: users.genesisWebAuthnUserHandle
     };
 }
 
