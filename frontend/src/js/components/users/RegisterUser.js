@@ -17,21 +17,16 @@ export class RegisterUser extends React.Component {
     state = {
         hasCompletedPhase1: false,
 
-        username: 'mtest',
-        previousPassword: 'michaelbarton123',
+        username: '',
+        previousPassword: '',
 
-        displayName: 'Burger Prince',
-        newPassword: 'michaelbarton',
-        confirmNewPassword: 'michaelbarton',
+        displayName: '',
+        newPassword: '',
+        confirmNewPassword: '',
 
         tfaCode: '',
 
         requesting: false
-    }
-
-    // TODO MRB: remove me after testing
-    componentDidMount = () => {
-        this.continuePressed();
     }
 
     canContinue = () => {
