@@ -92,7 +92,6 @@ class PanDomainUserProvider(val config: PandaAuthConfig, currentPublicKey: () =>
   /** None of these make sense for a pan domain authed user so we return a failure **/
   override def updatePassword(username: String, newPassword: String): Attempt[Unit] = unsupportedOperation
   override def get2faRegistrationParameters(request: Request[AnyContent], time: Epoch): Attempt[TfaRegistrationParameters] = unsupportedOperation
-  override def register2faMethod(username: String, registration: TfaRegistration, time: Epoch): Attempt[Unit] = unsupportedOperation
   override def registerUser(userData: JsValue, time: Epoch): Attempt[Unit] = unsupportedOperation
 
   def unsupportedOperation[T] = Attempt.Left[T](UnsupportedOperationFailure("This authentication provider is federated and doesn't support this operation."))

@@ -40,15 +40,8 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     }
   }
 
-  override def authenticate(request: Request[AnyContent], time: Epoch): Attempt[PartialUser] = for {
-    user <- authenticateUser(request, time, RequireRegistered, tfa.check2fa).recoverWith {
-      case SecondFactorRequired(username, _) =>
-        // The webauthn challenge is currently stored in the database
-        buildAndSave2faChallenge(username).flatMap { tfaChallenge =>
-          Attempt.Left(SecondFactorRequired(username, TfaChallengeParameters.toAuthenticateHeader(tfaChallenge)))
-        }
-    }
-  } yield user.toPartial
+  override def authenticate(request: Request[AnyContent], time: Epoch): Attempt[PartialUser] =
+    authenticateUser(request, time, RequireRegistered, tfa.check2fa).map(_.toPartial)
 
   override def genesisUser(request: JsValue, time: Epoch): Attempt[PartialUser] = {
     for {
@@ -125,13 +118,6 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     )
   }
 
-  def register2faMethod(username: String, registration: TfaRegistration, time: Epoch): Attempt[Unit] = for {
-    user <- users.getUser(username)
-    tfa <- tfa.checkRegistration(user.username, user.tfa, Some(registration), time)
-
-    _ <- buildAndSave2faConfiguration(username, tfa)
-  } yield ()
-
   private def authenticateUser(request: Request[AnyContent], time: Epoch, check: RegistrationCheck, checkTfa: TwoFactorAuth.Check): Attempt[DBUser] = {
     for {
       formData <- request.body.asFormUrlEncoded.toAttempt(Attempt.Left(ClientFailure("No form data")))
@@ -143,14 +129,15 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
         Attempt.Right(None)
       }
       dbUser <- passwordHashing.verifyUser(users.getUser(username), password, check)
-      _ <- checkTfa(dbUser, tfaChallengeResponse, time)
+      _ <- checkTfa(dbUser, tfaChallengeResponse, time).recoverWith {
+        case SecondFactorRequired(username, _) =>
+          // The webauthn challenge is currently stored in the database
+          buildAndSave2faConfiguration(username, dbUser.tfa).flatMap { tfaChallenge =>
+            Attempt.Left(SecondFactorRequired(username, TfaChallengeParameters.toAuthenticateHeader(tfaChallenge)))
+          }
+      }
     } yield dbUser
   }
-
-  private def buildAndSave2faChallenge(username: String): Attempt[TfaChallengeParameters] = for {
-    user <- users.getUser(username)
-    tfaChallenge <- buildAndSave2faConfiguration(username, user.tfa)
-  } yield tfaChallenge
 
   private def buildAndSave2faConfiguration(username: String, existing2fa: DBUser2fa): Attempt[TfaChallengeParameters] = {
     if(config.require2FA && existing2fa.activeTotpSecret.isEmpty) {
