@@ -98,8 +98,11 @@ object TfaChallengeResponse {
     }
 
     override def writes(r: TfaChallengeResponse): JsValue = r match {
-      case r: TotpCodeChallengeResponse => totpCodeChallengeResponseFormat.writes(r)
-      case r: WebAuthnChallengeResponse => webAuthnChallengeResponseFormat.writes(r)
+      case r: TotpCodeChallengeResponse =>
+        Json.toJson(r).asInstanceOf[JsObject] ++ JsObject(Seq("type" -> JsString("totp")))
+
+      case r: WebAuthnChallengeResponse =>
+        Json.toJson(r).asInstanceOf[JsObject] ++ JsObject(Seq("type" -> JsString("webauthn")))
       case other =>
         throw new IllegalArgumentException(s"Unknown TfaChallengeResponse type ${other.getClass}")
     }

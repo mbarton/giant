@@ -1,27 +1,26 @@
 package utils.auth.providers
 
-import model.frontend.user.PartialUser
-import model.user.{NewUser, TotpCodeRegistration}
+import model.frontend.user.{PartialUser, TfaChallengeResponse, TotpCodeChallengeResponse}
+import model.user.NewUser
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.should.Matchers
-import play.api.libs.json.{JsBoolean, JsNumber, Json}
+import play.api.libs.json.{JsBoolean, JsNumber, JsString, Json}
 import play.api.mvc.{AnyContentAsFormUrlEncoded, Results}
 import play.api.test.FakeRequest
 import test.{AttemptValues, TestUserManagement, TestUserRegistration}
 import utils.attempt._
-import utils.auth.totp.{Base32Secret, Totp}
-import utils.auth.webauthn.WebAuthn
+import utils.auth.totp.Base32Secret
 
 class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptValues with Results  {
   import TestUserManagement._
   import test.fixtures.GoogleAuthenticator._
 
-  def formParams(username: String, password: String, tfa: Option[String] = None): FakeRequest[AnyContentAsFormUrlEncoded] =
+  def formParams(username: String, password: String, tfa: Option[TfaChallengeResponse] = None): FakeRequest[AnyContentAsFormUrlEncoded] =
     FakeRequest("GET", "/endpoint").withBody(
       AnyContentAsFormUrlEncoded(List(
         Some("username" -> Seq(username)),
         Some("password" -> Seq(password)),
-        tfa.map(v => "tfa" -> Seq(v)),
+        tfa.map(v => "tfa" -> Seq(Json.stringify(Json.toJson(v)))),
       ).flatten.toMap)
     )
 
@@ -31,7 +30,8 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
 
       userProvider.clientConfig shouldBe Map(
         "require2fa" -> JsBoolean(true),
-        "minPasswordLength" -> JsNumber(userProvider.config.minPasswordLength)
+        "minPasswordLength" -> JsNumber(userProvider.config.minPasswordLength),
+        "totpIssuer" -> JsString("giant")
       )
     }
 
@@ -80,7 +80,7 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           sampleEpoch
         )
 
-        authResult.failureValue shouldBe SecondFactorRequired("2FA enrollment is required")
+        authResult.failureValue should be(LoginFailure("2FA enrollment is required"))
       }
 
       "authentication fails when the password is right but 2FA is required" in {
@@ -91,14 +91,14 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           sampleEpoch
         )
 
-        authResult.failureValue shouldBe SecondFactorRequired("2FA code required")
+        authResult.failureValue shouldBe a[SecondFactorRequired]
       }
 
       "authentication fails when the password is right but 2FA is wrong" in {
         val (userProvider, _) = makeUserProvider(require2fa = true, registeredUserTotp("bob"))
 
         val authResult = userProvider.authenticate(
-          formParams(username = "bob", password = testPassword, tfa = Some("123456")),
+          formParams(username = "bob", password = testPassword, tfa = Some(TotpCodeChallengeResponse("123456"))),
           sampleEpoch
         )
 
@@ -110,11 +110,35 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
           registeredUserTotp("bob", displayName = Some("Bob Bob Ricard")))
 
         val authResult = userProvider.authenticate(
-          formParams(username = "bob", password = testPassword, tfa = Some(sampleAnswer)),
+          formParams(username = "bob", password = testPassword, tfa = Some(TotpCodeChallengeResponse(sampleAnswer))),
           sampleEpoch
         )
 
         authResult.successValue shouldBe PartialUser("bob", "Bob Bob Ricard")
+      }
+
+      "authentication returns a new webauthn challenge for each call" in {
+        val (userProvider, _) = makeUserProvider(require2fa = true, registeredUserWebauthn("bob"))
+
+        val firstAuthResult = userProvider.authenticate(
+          formParams(username = "bob", password = testPassword),
+          sampleEpoch
+        )
+
+        firstAuthResult.failureValue shouldBe a[SecondFactorRequired]
+
+        val firstHeader = firstAuthResult.failureValue.asInstanceOf[SecondFactorRequired].wwwAuthenticateHeader
+
+        val secondAuthResult = userProvider.authenticate(
+          formParams(username = "bob", password = testPassword),
+          sampleEpoch
+        )
+
+        secondAuthResult.failureValue shouldBe a[SecondFactorRequired]
+
+        val secondHeader = secondAuthResult.failureValue.asInstanceOf[SecondFactorRequired].wwwAuthenticateHeader
+
+        secondHeader should not be(firstHeader)
       }
     }
 
@@ -294,129 +318,53 @@ class DatabaseUserProviderTest extends AnyFreeSpec with Matchers with AttemptVal
         stored2fa.inactiveTotpSecret should contain(Base32Secret(result.successValue.totpSecret))
       }
 
-      // TODO MRB: fix this test
-//      "returns existing webauthn user handle" in {
-//        val (userProvider, users) = makeUserProvider(require2fa = true, unregisteredUserNo2fa("bob"))
-//        val webAuthnUserHandle = users.getUser("bob").successValue.tfa.webAuthnUserHandle
-//
-//        webAuthnUserHandle should not be empty
-//
-//        val result = userProvider.get2faRegistrationParameters(formParams("bob", testPassword), sampleEpoch)
-//        result.successValue.webAuthnUserHandle shouldBe WebAuthn.toBase64(webAuthnUserHandle.get.data)
-//      }
+      "returns existing webauthn user handle" in {
+        val (userProvider, users) = makeUserProvider(require2fa = true, unregisteredUserNo2fa("bob"))
+        val webAuthnUserHandle = users.getUser("bob").successValue.tfa.webAuthnUserHandle
 
-//      "generates webauthn user handle if the user doesn't already have one" in {
-//        val baseUser = unregisteredUserNo2fa("bob")
-//        val user: TestUserRegistration = baseUser.copy(dbUser = baseUser.dbUser.copy(
-//          tfa = baseUser.dbUser.tfa.copy(webAuthnUserHandle = None)))
-//
-//        val (userProvider, users) = makeUserProvider(require2fa = true, user)
-//
-//        val result = userProvider.get2faRegistrationParameters(formParams("bob", testPassword), sampleEpoch)
-//        val webAuthnUserHandle = result.successValue.webAuthnUserHandle
-//
-//        val stored2fa = users.getUser("bob").successValue.tfa
-//        WebAuthn.toBase64(stored2fa.webAuthnUserHandle.get.data) shouldBe webAuthnUserHandle
-//      }
+        webAuthnUserHandle should not be empty
 
-//      "returns existing webauthn challenge" in {
-//        val (userProvider, users) = makeUserProvider(require2fa = true, unregisteredUserNo2fa("bob"))
-//        val webAuthnUserHandle = users.getUser("bob").successValue.tfa.webAuthnUserHandle
-//
-//        webAuthnUserHandle should not be empty
-//
-//        val result = userProvider.get2faRegistrationParameters(formParams("bob", testPassword), sampleEpoch)
-//        result.successValue.webAuthnUserHandle shouldBe WebAuthn.toBase64(webAuthnUserHandle.get.data)
-//      }
-
-//      "generates webauthn challenge if the user doesn't already have one" in {
-//        val baseUser = unregisteredUserNo2fa("bob")
-//        val user: TestUserRegistration = baseUser.copy(dbUser = baseUser.dbUser.copy(
-//          tfa = baseUser.dbUser.tfa.copy(webAuthnChallenge = None)))
-//
-//        val (userProvider, users) = makeUserProvider(require2fa = true, user)
-//
-//        val result = userProvider.get2faRegistrationParameters(formParams("bob", testPassword), sampleEpoch)
-//        val webAuthnChallenge = result.successValue.webAuthnChallenge
-//
-//        val stored2fa = users.getUser("bob").successValue.tfa
-//        WebAuthn.toBase64(stored2fa.webAuthnChallenge.get.data) shouldBe webAuthnChallenge
-//      }
-    }
-
-    "get2faChallengeParameters" - {
-      "fails when username wrong" in {
-        val (userProvider, _) = makeUserProvider(require2fa = true, registeredUserTotp("bob"))
-
-        val result = userProvider.get2faChallengeParameters(formParams("ted", testPassword), sampleEpoch)
-
-        result.failureValue shouldBe an[UserDoesNotExistFailure]
+        val result = userProvider.get2faRegistrationParameters(formParams("bob", testPassword), sampleEpoch)
+        result.successValue.webAuthnUserHandle shouldBe webAuthnUserHandle.get.encode()
       }
 
-      "fails when password wrong" in {
-        val (userProvider, _) = makeUserProvider(require2fa = true, registeredUserTotp("bob"))
+      "generates webauthn user handle if the user doesn't already have one" in {
+        val baseUser = unregisteredUserNo2fa("bob")
+        val user: TestUserRegistration = baseUser.copy(dbUser = baseUser.dbUser.copy(
+          tfa = baseUser.dbUser.tfa.copy(webAuthnUserHandle = None)))
 
-        val result = userProvider.get2faChallengeParameters(formParams("bob", "hello!"), sampleEpoch)
+        val (userProvider, users) = makeUserProvider(require2fa = true, user)
 
-        result.failureValue shouldBe a[LoginFailure]
+        val result = userProvider.get2faRegistrationParameters(formParams("bob", testPassword), sampleEpoch)
+        val webAuthnUserHandle = result.successValue.webAuthnUserHandle
+
+        val storedUserHandle = users.getUser("bob").successValue.tfa.webAuthnUserHandle.map(_.encode())
+        storedUserHandle should contain(webAuthnUserHandle)
       }
 
-      "fails when user is not yet registered" in {
-        val (userProvider, _) = makeUserProvider(require2fa = true, unregisteredUserNo2fa("bob"))
+      "returns existing webauthn challenge" in {
+        val (userProvider, users) = makeUserProvider(require2fa = true, unregisteredUserNo2fa("bob"))
+        val webAuthnUserHandle = users.getUser("bob").successValue.tfa.webAuthnUserHandle
 
-        val result = userProvider.get2faChallengeParameters(formParams("bob", testPassword), sampleEpoch)
+        webAuthnUserHandle should not be empty
 
-        result.failureValue shouldBe a[LoginFailure]
+        val result = userProvider.get2faRegistrationParameters(formParams("bob", testPassword), sampleEpoch)
+        result.successValue.webAuthnUserHandle shouldBe webAuthnUserHandle.get.encode()
       }
 
-      "returns data even when 2fa is not required" in {
-        val (userProvider, _) = makeUserProvider(require2fa = false, registeredUserNo2fa("bob"))
+      "generates webauthn challenge if the user doesn't already have one" in {
+        val baseUser = unregisteredUserNo2fa("bob")
+        val user: TestUserRegistration = baseUser.copy(dbUser = baseUser.dbUser.copy(
+          tfa = baseUser.dbUser.tfa.copy(webAuthnChallenge = None)))
 
-        val result = userProvider.get2faChallengeParameters(formParams("bob", testPassword), sampleEpoch)
-        result.successValue
-      }
+        val (userProvider, users) = makeUserProvider(require2fa = true, user)
 
-//      "returns a new webauthn challenge for each call" in {
-//        val (userProvider, users) = makeUserProvider(require2fa = false, registeredUserNo2fa("bob"))
-//
-//        val first = userProvider.get2faChallengeParameters(formParams("bob", testPassword), sampleEpoch).successValue
-//        val second = userProvider.get2faChallengeParameters(formParams("bob", testPassword), sampleEpoch).successValue
-//
-//        second.webAuthnChallenge should not be(first.webAuthnChallenge)
-//
-//        val challenge = users.getUser("bob").successValue.tfa.webAuthnChallenge
-//        challenge should not be empty
-//
-//        second.webAuthnChallenge shouldBe WebAuthn.toBase64(challenge.get.data)
-//      }
-    }
+        val result = userProvider.get2faRegistrationParameters(formParams("bob", testPassword), sampleEpoch)
+        val webAuthnChallenge = result.successValue.webAuthnChallenge
 
-    "register2faMethod" - {
-      "registers totp" in {
-        val (userProvider, users) = makeUserProvider(require2fa = true, registeredUserNo2fa("bob"))
-
-        val result = userProvider.register2faMethod("bob", TotpCodeRegistration(sampleAnswer), sampleEpoch)
-        result.successValue
-
-        users.getUser("bob").successValue.tfa.activeTotpSecret should not be empty
-      }
-
-      "update totp code for existing user" in {
-        val (userProvider, users) = makeUserProvider(require2fa = true, registeredUserTotp("bob"))
-
-        val inactiveTotpSecret = users.getUser("bob").successValue.tfa.inactiveTotpSecret.get
-        val code = Totp.googleAuthenticatorInstance().generateList(inactiveTotpSecret, sampleEpoch)(scala.concurrent.ExecutionContext.global).successValue.head
-
-        val result = userProvider.register2faMethod("bob", TotpCodeRegistration(code), sampleEpoch)
-        result.successValue
-
-        users.getUser("bob").successValue.tfa.activeTotpSecret should contain(inactiveTotpSecret)
+        val storeWebAuthnChallenge = users.getUser("bob").successValue.tfa.webAuthnChallenge.map(_.encode())
+        storeWebAuthnChallenge should contain(webAuthnChallenge)
       }
     }
-
-    // TODO MRB: add more tests (possibly integration tests rather than here?)
-    //  - reset totp code (triggered by the user)
-    //  - reset totp code (triggered by the admin, can't log in again until re-registered)
-    //  - e2e tests for getting params and registering 2fa (both unregistered and registered users)
   }
 }

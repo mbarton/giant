@@ -132,27 +132,26 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       _ <- checkTfa(dbUser, tfaChallengeResponse, time).recoverWith {
         case SecondFactorRequired(username, _) =>
           // The webauthn challenge is currently stored in the database
-          buildAndSave2faConfiguration(username, dbUser.tfa).flatMap { tfaChallenge =>
-            Attempt.Left(SecondFactorRequired(username, TfaChallengeParameters.toAuthenticateHeader(tfaChallenge)))
+          generateAndSave2faChallenge(dbUser).flatMap { tfaChallenge =>
+            Attempt.Left(SecondFactorRequired(
+              username,
+              TfaChallengeParameters.toAuthenticateHeader(tfaChallenge)
+            ))
           }
       }
     } yield dbUser
   }
 
-  private def buildAndSave2faConfiguration(username: String, existing2fa: DBUser2fa): Attempt[TfaChallengeParameters] = {
-    if(config.require2FA && existing2fa.activeTotpSecret.isEmpty) {
-      Attempt.Left(MisconfiguredAccount("2FA enrollment is required"))
-    } else {
-      val challenge = WebAuthn.Challenge.create(ssg)
-      val new2fa = existing2fa.copy(webAuthnChallenge = Some(challenge))
+  private def generateAndSave2faChallenge(user: DBUser): Attempt[TfaChallengeParameters] = {
+    val challenge = WebAuthn.Challenge.create(ssg)
+    val new2fa = user.tfa.copy(webAuthnChallenge = Some(challenge))
 
-      users.setUser2fa(username, new2fa).map { _ =>
-        TfaChallengeParameters(
-          totp = existing2fa.activeTotpSecret.nonEmpty,
-          webAuthnCredentialIds = new2fa.webAuthnAuthenticators.map(_.id.encode()),
-          webAuthnChallenge = challenge.encode()
-        )
-      }
+    users.setUser2fa(user.username, new2fa).map { _ =>
+      TfaChallengeParameters(
+        totp = new2fa.activeTotpSecret.nonEmpty,
+        webAuthnCredentialIds = new2fa.webAuthnAuthenticators.map(_.id.encode()),
+        webAuthnChallenge = challenge.encode()
+      )
     }
   }
 }

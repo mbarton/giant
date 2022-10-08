@@ -9,7 +9,7 @@ import test.fixtures.GoogleAuthenticator
 import utils.attempt._
 import utils.auth.{PasswordHashing, PasswordValidator, TwoFactorAuth}
 import utils.auth.providers.DatabaseUserProvider
-import utils.auth.totp.{SecureSecretGenerator, Totp}
+import utils.auth.totp.{Algorithm, SecureSecretGenerator, Totp}
 import utils.auth.webauthn.WebAuthn
 
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -85,6 +85,22 @@ object TestUserManagement {
                          collections: List[Collection] = List.empty): TestUserRegistration = {
     val initial = registeredUserNo2fa(username, displayName, permissions, collections)
     initial.copy(dbUser = initial.dbUser.copy(tfa = initial.dbUser.tfa.copy(activeTotpSecret = Some(sampleSecret))))
+  }
+
+  def registeredUserWebauthn(username: String, displayName: Option[String] = None, permissions: UserPermissions = UserPermissions.default,
+                             collections: List[Collection] = List.empty): TestUserRegistration = {
+    val initial = registeredUserNo2fa(username, displayName, permissions, collections)
+    initial.copy(dbUser = initial.dbUser.copy(tfa = initial.dbUser.tfa.copy(
+      webAuthnUserHandle = Some(WebAuthn.UserHandle.create(ssg)),
+      webAuthnAuthenticators = List(WebAuthn.WebAuthn4jAuthenticator(
+        WebAuthn.CredentialId(ssg.createRandomSecret(Algorithm.HmacSHA256).data),
+        null,
+        Set.empty,
+        0,
+        null,
+        null
+      ))
+    )))
   }
 
   def unregisteredUser2fa(username: String): TestUserRegistration = {
