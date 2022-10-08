@@ -58,15 +58,15 @@ object TfaRegistration {
 /**
  * What 2fa methods can be used. Sent to the client before performing 2fa
  */
-case class TfaChallengeParameters(totp: Boolean, webAuthnCredentialIds: List[WebAuthn.CredentialId], webAuthnChallenge: WebAuthn.Challenge)
+case class TfaChallengeParameters(totp: Boolean, webAuthnCredentialIds: List[String], webAuthnChallenge: String)
 object TfaChallengeParameters {
   def toAuthenticateHeader(params: TfaChallengeParameters): String = {
     List(
       // Retain the generic name for compatibility with older versions of Giant CLI
       if(params.totp) { Some("Pfi2fa") } else { None },
       if(params.webAuthnCredentialIds.nonEmpty) {
-        Some(s"PfiWebAuthn challenge=${params.webAuthnChallenge.encode()} ${params.webAuthnCredentialIds.zipWithIndex.map {
-          case (id, ix) => s"credential$ix=${id.encode()}"
+        Some(s"PfiWebAuthn challenge=${params.webAuthnChallenge} ${params.webAuthnCredentialIds.zipWithIndex.map {
+          case (id, ix) => s"credential$ix=$id"
         }.mkString(" ")}")
       } else {
         None
@@ -79,7 +79,7 @@ sealed trait TfaChallengeResponse
 
 case class TotpCodeChallengeResponse(code: String) extends TfaChallengeResponse
 
-case class WebAuthnChallengeResponse(id: String, userHandle: String, clientDataJson: String, authenticatorData: String, signature: String) extends TfaChallengeResponse
+case class WebAuthnChallengeResponse(id: String, clientDataJson: String, authenticatorData: String, signature: String, userHandle: Option[String]) extends TfaChallengeResponse
 
 object TfaChallengeResponse {
   private implicit val totpCodeChallengeResponseFormat: Format[TotpCodeChallengeResponse] = Json.format[TotpCodeChallengeResponse]

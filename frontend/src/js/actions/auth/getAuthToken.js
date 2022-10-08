@@ -16,10 +16,10 @@ function parseAuthenticateHeader(authenticate) {
     }, {});
 }
 
-export function getAuthToken(username, password, tfaCode) {
+export function getAuthToken(username, password, tfa) {
     return dispatch => {
         dispatch(requestToken(username));
-        return getToken(username, password, tfaCode)
+        return getToken(username, password, tfa)
             .then(response => {
                 const status = response.status;
                 const authHeader = response.headers.get('X-Offer-Authorization');

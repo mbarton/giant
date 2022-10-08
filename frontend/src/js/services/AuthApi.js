@@ -1,12 +1,12 @@
 import authFetch from '../util/auth/authFetch';
 
-export function getToken(username, password, tfaCode) {
+export function getToken(username, password, tfa) {
     const params = new URLSearchParams();
     params.append('username', username);
     params.append('password', password);
 
-    if (tfaCode) {
-        params.append('tfa', tfaCode);
+    if (tfa) {
+        params.append('tfa', JSON.stringify(tfa));
     }
 
     return fetch('/api/auth/token', {

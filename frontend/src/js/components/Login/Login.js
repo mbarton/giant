@@ -30,9 +30,8 @@ class Login extends React.Component {
     };
 
     state = {
-        // TODO MRB: remove after testing
-        username: 'admin',
-        password: 'michaelbarton',
+        username: '',
+        password: '',
         tfaCode: '',
         auth: null
     };
@@ -42,9 +41,6 @@ class Login extends React.Component {
         if (this.props.genesisSetupComplete && this.props.config.userProvider === 'panda') {
             this.autoLogin();
         }
-
-        // TODO MRB: remove after testing
-        this.login();
     }
 
     componentWillUnmount() {
@@ -60,7 +56,15 @@ class Login extends React.Component {
 
     login = (e) => {
         e && e.preventDefault();
-        this.props.getToken(this.state.username, this.state.password, this.state.tfaCode);
+
+        if(this.state.tfaCode) {
+            this.props.getToken(this.state.username, this.state.password, {
+                type: 'totp',
+                code: this.state.tfaCode
+            });
+        } else {
+            this.props.getToken(this.state.username, this.state.password);
+        }
     };
 
     loginWebauthn = (e) => {
@@ -72,8 +76,11 @@ class Login extends React.Component {
             .map(([, value]) => value);
 
         checkSecurityKey(challenge, credentialIds)
-            .then(r => {
-                console.log(r);
+            .then(webauthnParams => {
+                this.props.getToken(this.state.username, this.state.password, {
+                    type: 'webauthn',
+                    ...webauthnParams
+                });
             })
     }
 

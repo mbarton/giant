@@ -137,7 +137,11 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       formData <- request.body.asFormUrlEncoded.toAttempt(Attempt.Left(ClientFailure("No form data")))
       username <- formData.get("username").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No username form parameter")))
       password <- formData.get("password").flatMap(_.headOption).toAttempt(Attempt.Left(ClientFailure("No password form parameter")))
-      tfaChallengeResponse = formData.get("tfa").flatMap(_.headOption).map(TotpCodeChallengeResponse)
+      tfaChallengeResponse <- if(formData.contains("tfa")) {
+        Json.parse(formData("tfa").head).validate[TfaChallengeResponse].toAttempt.map(Some(_))
+      } else {
+        Attempt.Right(None)
+      }
       dbUser <- passwordHashing.verifyUser(users.getUser(username), password, check)
       _ <- checkTfa(dbUser, tfaChallengeResponse, time)
     } yield dbUser
@@ -158,8 +162,8 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       users.setUser2fa(username, new2fa).map { _ =>
         TfaChallengeParameters(
           totp = existing2fa.activeTotpSecret.nonEmpty,
-          webAuthnCredentialIds = new2fa.webAuthnAuthenticators.map(_.id),
-          webAuthnChallenge = challenge
+          webAuthnCredentialIds = new2fa.webAuthnAuthenticators.map(_.id.encode()),
+          webAuthnChallenge = challenge.encode()
         )
       }
     }

@@ -1,7 +1,7 @@
 package utils.auth
 
 import model.user.{DBUser, DBUser2fa}
-import model.frontend.user.{TfaChallengeResponse, TfaRegistration, TotpCodeChallengeResponse, TotpCodeRegistration, WebAuthnPublicKeyRegistration}
+import model.frontend.user.{TfaChallengeResponse, TfaRegistration, TotpCodeChallengeResponse, TotpCodeRegistration, WebAuthnChallengeResponse, WebAuthnPublicKeyRegistration}
 import utils.attempt.{Attempt, LoginFailure, MisconfiguredAccount, SecondFactorRequired, UnknownFailure}
 import utils.auth.totp.{SecureSecretGenerator, Totp}
 import utils.auth.webauthn.WebAuthn
@@ -32,6 +32,9 @@ class TwoFactorAuth(require2fa: Boolean, totp: Totp, ssg: SecureSecretGenerator)
 
     case (user, Some(TotpCodeChallengeResponse(code)), time) if user.tfa.activeTotpSecret.nonEmpty =>
       totp.checkCodeFatal(user.tfa.activeTotpSecret.get, code, time)
+
+    case (user, Some(params: WebAuthnChallengeResponse), _) =>
+      WebAuthn.verify(user.username, user.tfa, params)
 
     case (user, challengeResponse, _) =>
       logger.warn(s"${user.username} failed 2fa. registered: require2fa: ${require2fa}. activeTotpSecret: ${user.tfa.activeTotpSecret.nonEmpty}. challengeResponse: ${challengeResponse.map(_.getClass.getName).getOrElse("None")}")

@@ -12,11 +12,11 @@ import com.webauthn4j.data.client.Origin
 import com.webauthn4j.data.client.challenge.{DefaultChallenge => WebAuthn4JChallenge}
 import com.webauthn4j.data.extension.authenticator.{AuthenticationExtensionsAuthenticatorOutputs, RegistrationExtensionAuthenticatorOutput}
 import com.webauthn4j.data.extension.client.{AuthenticationExtensionsClientOutputs, RegistrationExtensionClientOutput}
-import com.webauthn4j.data.{AuthenticatorTransport, RegistrationParameters, RegistrationRequest}
+import com.webauthn4j.data.{AuthenticationParameters, AuthenticationRequest, AuthenticatorTransport, RegistrationParameters, RegistrationRequest}
 import com.webauthn4j.server.ServerProperty
 import com.webauthn4j.validator.exception.ValidationException
 import model.user.DBUser2fa
-import model.frontend.user.WebAuthnPublicKeyRegistration
+import model.frontend.user.{WebAuthnChallengeResponse, WebAuthnPublicKeyRegistration}
 import play.api.libs.json.{Format, JsArray, JsNumber, JsResult, JsString, JsValue, Json}
 import utils.Logging
 import utils.attempt._
@@ -188,6 +188,54 @@ object WebAuthn extends Logging {
       case e: ValidationException =>
         logger.warn(s"Webauthn registration validation failure for $username", e)
         ClientFailure("Webauthn registration failure")
+    }
+  }
+
+  def verify(username: String, tfa: DBUser2fa, params: WebAuthnChallengeResponse): Attempt[Unit] = {
+    val credentialId = WebAuthn.CredentialId.decode(params.id)
+
+    val challenge = new WebAuthn4JChallenge(tfa.webAuthnChallenge.get.data.toArray)
+    val serverProperty = new ServerProperty(new Origin(origin), rpId, challenge, null)
+
+    val request = new AuthenticationRequest(
+      credentialId.data.toArray,
+      params.userHandle.map(WebAuthn.UserHandle.decode).map(_.data.toArray).orNull,
+      WebAuthn.fromBase64Url(params.authenticatorData).toArray,
+      WebAuthn.fromBase64Url(params.clientDataJson).toArray,
+      null,
+      WebAuthn.fromBase64Url(params.signature).toArray
+    )
+
+    tfa.webAuthnAuthenticators.find(_.id == credentialId) match {
+      case Some(authenticator) =>
+        val params = new AuthenticationParameters(
+          serverProperty,
+          authenticator.instance(),
+          null,
+          // user verification not required
+          false,
+          // user presence required
+          true
+        )
+
+        Attempt.catchNonFatal {
+          val authenticationData = webAuthnManager.parse(request)
+          webAuthnManager.validate(authenticationData, params)
+
+          // TODO MRB: update counter of the auth record (it's always zero for yubikeys anyway?)
+          ()
+        } {
+          case e: DataConversionException =>
+            logger.warn(s"Webauthn authentication parse failure for $username", e)
+            ClientFailure("Webauthn authentication failure")
+
+          case e: ValidationException =>
+            logger.warn(s"Webauthn authentication validation failure for $username", e)
+            ClientFailure("Webauthn authentication failure")
+        }
+
+      case None =>
+        Attempt.Left(MisconfiguredAccount(s"Unknown credential id ${credentialId.encode()}"))
     }
   }
 }
