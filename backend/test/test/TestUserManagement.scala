@@ -130,7 +130,6 @@ class TestUserManagement(initialUsers: TestUserManagement.Storage) extends UserM
   override def updateUserPassword(username: String, password: BCryptPassword): Attempt[DBUser] =
     updateDbUserField(username, _.copy(password = Some(password)))
 
-
   override def updateUserDisplayName(username: String, displayName: String): Attempt[DBUser] =
     updateDbUserField(username, _.copy(displayName = Some(displayName)))
 

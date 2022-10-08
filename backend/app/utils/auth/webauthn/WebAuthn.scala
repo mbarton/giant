@@ -83,7 +83,6 @@ object WebAuthn extends Logging {
   }
 
   // https://webauthn4j.github.io/webauthn4j/en/#representation-of-an-authenticator
-  // TODO MRB: request attestation and store attestationStatement?
   case class WebAuthn4jAuthenticator(
       id: CredentialId,
       attestedCredentialData: AttestedCredentialData,

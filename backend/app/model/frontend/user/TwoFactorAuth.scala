@@ -1,7 +1,6 @@
 package model.frontend.user
 
 import play.api.libs.json._
-import utils.auth.webauthn.WebAuthn
 
 /**
  * Sent to the client before registering a new 2fa method
@@ -21,7 +20,7 @@ case class TotpCodeRegistration(code: String) extends TfaRegistration
 
 /**
  * Sent to the server when registering a WebAuthn public key (eg Yubikey)
- * All fields are base64 encoded
+ * All fields are base64url encoded
  */
 case class WebAuthnPublicKeyRegistration(id: String, clientDataJson: String, attestationObject: String) extends TfaRegistration
 
@@ -56,7 +55,7 @@ object TfaRegistration {
 }
 
 /**
- * What 2fa methods can be used. Sent to the client before performing 2fa
+ * What 2fa methods can be used. Sent to the client in the WWW-Authenticate header to ask for 2fa to be performed
  */
 case class TfaChallengeParameters(totp: Boolean, webAuthnCredentialIds: List[String], webAuthnChallenge: String)
 object TfaChallengeParameters {
@@ -75,6 +74,9 @@ object TfaChallengeParameters {
   }
 }
 
+/**
+ * Sent from the client to the server in response to a 401 with a challenge in the WWW-Authenticate header
+ */
 sealed trait TfaChallengeResponse
 
 case class TotpCodeChallengeResponse(code: String) extends TfaChallengeResponse
@@ -85,6 +87,7 @@ object TfaChallengeResponse {
   private implicit val totpCodeChallengeResponseFormat: Format[TotpCodeChallengeResponse] = Json.format[TotpCodeChallengeResponse]
   private implicit val webAuthnChallengeResponseFormat: Format[WebAuthnChallengeResponse] = Json.format[WebAuthnChallengeResponse]
 
+  // TODO MRB: read these as separate fields in the form submission rather than crowbarring it in to JSON
   implicit val format: Format[TfaChallengeResponse] = new Format[TfaChallengeResponse] {
     override def reads(json: JsValue): JsResult[TfaChallengeResponse] = {
       (json \ "type").validate[String].flatMap {

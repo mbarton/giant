@@ -9,15 +9,19 @@ import scala.collection.JavaConverters._
 // Originally we just had totpSecret as a field on DBUser but we need a lot more state to handle webauthn
 // It's cleaner to store that all separately and allows us to "repair" write in the additional fields for existing users
 case class DBUser2fa(
-  // filled in once the client has confirmed the code and we've checked it
+  // Filled in once the client has confirmed the code and we've checked it
   activeTotpSecret: Option[Secret],
-  // to support moving to a new device
+  // Should be set even after registering to support moving to a new device
   inactiveTotpSecret: Option[Secret],
-  // the webauthn user handle stored on the client shouldn't include PII or usernames
+  // The webauthn user handle stored on the client shouldn't include PII or usernames
   // https://www.w3.org/TR/webauthn-2/#sctn-user-handle-privacy
   webAuthnUserHandle: Option[WebAuthn.UserHandle],
+  // Each entry matches up with a webauthn 2fa method registered for the user (eg Yubikey)
+  // Wrapper around the various serialisation formats defined by WebAuthn4j
   webAuthnAuthenticators: List[WebAuthn.WebAuthn4jAuthenticator],
-  // to support registering an additional public key
+  // Each operation (registration, verification) requires a challenge to defend against replay attacks
+  // This field should be replaced after each successful operation (or call to generate new 2fa credentials)
+  // TODO MRB: we could store this in an encrypted session cookie if we wanted to avoid database writes?
   webAuthnChallenge: Option[WebAuthn.Challenge]
 ) {
   def hasMethodRegistered: Boolean = activeTotpSecret.nonEmpty || webAuthnAuthenticators.nonEmpty
