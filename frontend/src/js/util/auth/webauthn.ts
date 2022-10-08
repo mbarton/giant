@@ -5,6 +5,18 @@ type WebAuthnPublicKeyRegistration = {
     attestationObject: string
 };
 
+// See WebAuthnChallengeResponse in the backend
+type WebAuthnChallengeResponse = {
+    id: string,
+    userHandle: string | null,
+    clientDataJson: string,
+    authenticatorData: string,
+    signature: string
+}
+
+// TODO MRB: test how the UI reacts to and recovers from a timeout
+const timeout = 60000
+
 export async function registerSecurityKey(challenge: string, name: string, userHandle: string, username: string, displayName: string): Promise<WebAuthnPublicKeyRegistration> {
     const resp = await navigator.credentials.create({
         publicKey: {
@@ -25,7 +37,7 @@ export async function registerSecurityKey(challenge: string, name: string, userH
             authenticatorSelection: {
                 authenticatorAttachment: 'cross-platform'
             },
-            timeout: 60000,
+            timeout,
             attestation: 'none'
         }
     });
@@ -35,14 +47,40 @@ export async function registerSecurityKey(challenge: string, name: string, userH
     }
 
     const publicKeyCredential = resp as PublicKeyCredential;
-
-    const { id } = publicKeyCredential;
     const { clientDataJSON, attestationObject } = publicKeyCredential.response as AuthenticatorAttestationResponse;
 
     return {
-        id,
+        id: publicKeyCredential.id,
         clientDataJson: toBase64Url(clientDataJSON),
         attestationObject: toBase64Url(attestationObject)
+    };
+}
+
+export async function checkSecurityKey(challenge: string, credentialIds: string[]): Promise<WebAuthnChallengeResponse> {
+    const resp = await navigator.credentials.get({
+        publicKey: {
+            challenge: fromBase64Url(challenge),
+            allowCredentials: credentialIds.map(id => ({
+                id: fromBase64Url(id),
+                type: 'public-key'
+            })),
+            timeout
+        }
+    });
+
+    if(!resp) {
+        throw new Error('Missing credential response from navigator.credentials.get');
+    }
+
+    const publicKeyCredential = resp as PublicKeyCredential;
+    const { userHandle, clientDataJSON, authenticatorData, signature } = publicKeyCredential.response as AuthenticatorAssertionResponse;
+
+    return {
+        id: publicKeyCredential.id,
+        userHandle: userHandle ? toBase64Url(userHandle) : null,
+        clientDataJson: toBase64Url(clientDataJSON),
+        authenticatorData: toBase64Url(authenticatorData),
+        signature: toBase64Url(signature)
     };
 }
 

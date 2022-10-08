@@ -3,17 +3,17 @@ import {getToken} from '../../services/AuthApi';
 import {clearAllErrors, clearAllWarnings} from '../problems';
 
 function parseAuthenticateHeader(authenticate) {
-    return authenticate.split(',').map(part => {
+    return authenticate.split(",").reduce((acc, part) => {
         const [type, ...params] = part.trim().split(' ');
 
         return {
-            type,
-            ...params.reduce((acc, param) => {
+            ...acc,
+            [type]: params.reduce((acc, param) => {
                 const [key, value] = param.split("=");
                 return { ...acc, [key.trim()]: value.trim() };
             }, {})
-        };
-    });
+        }
+    }, {});
 }
 
 export function getAuthToken(username, password, tfaCode) {

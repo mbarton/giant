@@ -6,6 +6,7 @@ import md5 from 'md5';
 import { config } from '../../types/Config';
 import { ProgressAnimation } from '../UtilComponents/ProgressAnimation';
 import { CreateGenesisUser } from '../users/CreateGenesisUser';
+import { checkSecurityKey } from '../../util/auth/webauthn';
 
 import {connect} from 'react-redux';
 import {bindActionCreators} from 'redux';
@@ -24,13 +25,14 @@ class Login extends React.Component {
         genesisSetupComplete: PropTypes.bool.isRequired,
         require2fa: PropTypes.bool.isRequired,
         requirePanda: PropTypes.bool.isRequired,
-        tfaMethods: PropTypes.arrayOf(PropTypes.object),
+        tfaMethods: PropTypes.object,
         config: config
     };
 
     state = {
-        username: '',
-        password: '',
+        // TODO MRB: remove after testing
+        username: 'admin',
+        password: 'michaelbarton',
         tfaCode: '',
         auth: null
     };
@@ -40,6 +42,9 @@ class Login extends React.Component {
         if (this.props.genesisSetupComplete && this.props.config.userProvider === 'panda') {
             this.autoLogin();
         }
+
+        // TODO MRB: remove after testing
+        this.login();
     }
 
     componentWillUnmount() {
@@ -57,6 +62,20 @@ class Login extends React.Component {
         e && e.preventDefault();
         this.props.getToken(this.state.username, this.state.password, this.state.tfaCode);
     };
+
+    loginWebauthn = (e) => {
+        e.preventDefault();
+
+        const { challenge } = this.props.tfaMethods.PfiWebAuthn;
+        const credentialIds = Object.entries(this.props.tfaMethods.PfiWebAuthn)
+            .filter(([key]) => key.startsWith("credential"))
+            .map(([, value]) => value);
+
+        checkSecurityKey(challenge, credentialIds)
+            .then(r => {
+                console.log(r);
+            })
+    }
 
     // when using panda we should be able to automatically login, but we need some logic to
     // ensure that we don't go around in circles
@@ -158,18 +177,11 @@ class Login extends React.Component {
     }
 
     render2fa() {
-        const totpSupported = this.props.tfaMethods
-            .some(({ type }) => type === 'Pfi2fa');
-
-        const webAuthnCredentialIds = this.props.tfaMethods
-            .filter(({ type }) => type === 'PfiWebAuthn')
-            .map(({ credentialId }) => credentialId);
-
         return (
             <div className='app__page app__page--centered'>
                 <form className='form' onSubmit={this.login}>
                     <h2 className='form__title'>Login</h2>
-                    {totpSupported ?
+                    {'Pfi2fa' in this.props.tfaMethods ?
                         (
                             <div className='form__section'>
                                 <label className='form__label' htmlFor='#tfa'>Authentication Code</label>
@@ -189,11 +201,11 @@ class Login extends React.Component {
                             </div>
                         )
                     : false}
-                    {webAuthnCredentialIds.length > 0 ?
+                    {'PfiWebAuthn' in this.props.tfaMethods ?
                         (
                             <div className='form__section'>
                                 <label className='form__label' htmlFor='#webauthn'>Security Key</label>
-                                <button className="btn" id="webauthn">Use Security Key</button>
+                                <button className="btn" id="webauthn" onClick={this.loginWebauthn}>Use Security Key</button>
                             </div>
                         )
                     : false}

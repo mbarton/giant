@@ -6,7 +6,8 @@ export default function auth(state = {
     require2fa: false,
     requirePanda: false,
     forbidden: false,
-    errors: []
+    errors: [],
+    tfaMethods: {}
 }, action) {
     switch (action.type) {
         case 'AUTH_TOKEN_GET_REQUEST':

@@ -20,7 +20,7 @@ sealed trait TfaRegistration
 case class TotpCodeRegistration(code: String) extends TfaRegistration
 
 /**
- * Sent to the server when registering a WebAuthn public key (eg Yubikey, iOS passkey)
+ * Sent to the server when registering a WebAuthn public key (eg Yubikey)
  * All fields are base64 encoded
  */
 case class WebAuthnPublicKeyRegistration(id: String, clientDataJson: String, attestationObject: String) extends TfaRegistration
@@ -79,25 +79,24 @@ sealed trait TfaChallengeResponse
 
 case class TotpCodeChallengeResponse(code: String) extends TfaChallengeResponse
 
-case class WebAuthnChallengeResponse() extends TfaChallengeResponse
+case class WebAuthnChallengeResponse(id: String, userHandle: String, clientDataJson: String, authenticatorData: String, signature: String) extends TfaChallengeResponse
 
 object TfaChallengeResponse {
+  private implicit val totpCodeChallengeResponseFormat: Format[TotpCodeChallengeResponse] = Json.format[TotpCodeChallengeResponse]
+  private implicit val webAuthnChallengeResponseFormat: Format[WebAuthnChallengeResponse] = Json.format[WebAuthnChallengeResponse]
+
   implicit val format: Format[TfaChallengeResponse] = new Format[TfaChallengeResponse] {
     override def reads(json: JsValue): JsResult[TfaChallengeResponse] = {
       (json \ "type").validate[String].flatMap {
-        case "totp" =>
-          (json \ "code").validate[String].map(TotpCodeChallengeResponse)
-
+        case "totp" => json.validate[TotpCodeChallengeResponse]
+        case "webauthn" => json.validate[WebAuthnChallengeResponse]
         case other => JsError(s"Unknown TfaChallengeResponse type ${other}")
       }
     }
 
     override def writes(r: TfaChallengeResponse): JsValue = r match {
-      case TotpCodeChallengeResponse(code) => Json.obj(
-        "type" -> "totp",
-        "code" -> "code"
-      )
-
+      case r: TotpCodeChallengeResponse => totpCodeChallengeResponseFormat.writes(r)
+      case r: WebAuthnChallengeResponse => webAuthnChallengeResponseFormat.writes(r)
       case other =>
         throw new IllegalArgumentException(s"Unknown TfaChallengeResponse type ${other.getClass}")
     }
