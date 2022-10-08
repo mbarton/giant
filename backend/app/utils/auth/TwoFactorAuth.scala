@@ -1,8 +1,8 @@
 package utils.auth
 
-import model.frontend.user._
 import model.user.{DBUser, DBUser2fa}
-import utils.attempt.{Attempt, LoginFailure, MisconfiguredAccount, SecondFactorRequired, SupportedSecondFactor, UnknownFailure}
+import model.frontend.user.{TfaChallengeResponse, TfaRegistration, TotpCodeChallengeResponse, TotpCodeRegistration, WebAuthnPublicKeyRegistration}
+import utils.attempt.{Attempt, LoginFailure, MisconfiguredAccount, SecondFactorRequired, UnknownFailure}
 import utils.auth.totp.{SecureSecretGenerator, Totp}
 import utils.auth.webauthn.WebAuthn
 import utils.{Epoch, Logging}
@@ -11,8 +11,6 @@ import scala.concurrent.ExecutionContext
 
 object TwoFactorAuth {
   type Check = (DBUser, Option[TfaChallengeResponse], Epoch) => Attempt[Unit]
-
-  val NoCheck: Check = (_: DBUser, _: Option[TfaChallengeResponse], _: Epoch) => Attempt.Right(())
 }
 
 class TwoFactorAuth(require2fa: Boolean, totp: Totp, ssg: SecureSecretGenerator)(implicit ec: ExecutionContext) extends Logging {
@@ -23,7 +21,8 @@ class TwoFactorAuth(require2fa: Boolean, totp: Totp, ssg: SecureSecretGenerator)
       Attempt.Left(LoginFailure("2FA enrollment is required"))
 
     case (user, None, _) if require2fa || user.tfa.hasMethodRegistered =>
-      Attempt.Left(buildSecondFactorRequiredFailure(user.tfa))
+      // The challenge is filled in by the UserProvider to avoid complicating things by writing to the database here
+      Attempt.Left(SecondFactorRequired(user.username, ""))
 
     case (_, None, _) if !require2fa =>
       Attempt.Right(())
@@ -41,7 +40,8 @@ class TwoFactorAuth(require2fa: Boolean, totp: Totp, ssg: SecureSecretGenerator)
 
   def checkCanRegister: Check = {
     case (user, None, _) if user.tfa.hasMethodRegistered =>
-      Attempt.Left(buildSecondFactorRequiredFailure(user.tfa))
+      // The challenge is filled in by the UserProvider to avoid complicating things by writing to the database here
+      Attempt.Left(SecondFactorRequired(user.username, ""))
 
     case (user, Some(TotpCodeChallengeResponse(_)), _) if user.tfa.inactiveTotpSecret.isEmpty =>
       Attempt.Left(MisconfiguredAccount("Missing inactive TOTP secret"))
@@ -76,15 +76,5 @@ class TwoFactorAuth(require2fa: Boolean, totp: Totp, ssg: SecureSecretGenerator)
 
     case Some(registration: WebAuthnPublicKeyRegistration) =>
       WebAuthn.verifyRegistration(username, user2fa, registration, ssg)
-  }
-
-  def buildSecondFactorRequiredFailure(tfa: DBUser2fa): SecondFactorRequired = {
-    val totpMethod = if(tfa.activeTotpSecret.nonEmpty) { List(SupportedSecondFactor.Totp) } else { List.empty }
-    val webAuthnMethods = tfa.webAuthnAuthenticators.map { auth => SupportedSecondFactor.Webauthn(auth.id.encodeUrl()) }
-
-    SecondFactorRequired(
-      "2FA required",
-      totpMethod ++ webAuthnMethods
-    )
   }
 }

@@ -1,14 +1,14 @@
 package utils.auth.providers
 
-import model.frontend.user.{PartialUser, TotpCodeRegistration}
-import model.user.NewUser
+import model.frontend.user.PartialUser
+import model.user.{NewUser, TotpCodeRegistration}
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.should.Matchers
 import play.api.libs.json.{JsBoolean, JsNumber, Json}
 import play.api.mvc.{AnyContentAsFormUrlEncoded, Results}
 import play.api.test.FakeRequest
 import test.{AttemptValues, TestUserManagement, TestUserRegistration}
-import utils.attempt.{LoginFailure, _}
+import utils.attempt._
 import utils.auth.totp.{Base32Secret, Totp}
 import utils.auth.webauthn.WebAuthn
 

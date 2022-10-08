@@ -1,7 +1,6 @@
 package utils.attempt
 
 import java.io.{PrintWriter, StringWriter}
-
 import cats.kernel.Semigroup
 import play.api.libs.json._
 
@@ -97,18 +96,9 @@ case class AuthenticationFailure(actualMessage: String, override val cause: Opti
 
 case class MissingPermissionFailure(msg: String) extends Failure
 
-sealed trait SupportedSecondFactor {
-  def clientCode: String
+case class SecondFactorRequired(username: String, wwwAuthenticateHeader: String) extends Failure {
+  final override def msg = "2FA required"
 }
-object SupportedSecondFactor {
-  case object Totp extends SupportedSecondFactor {
-    override def clientCode: String = "Pfi2fa" // for compatibility with older versions of Giant
-  }
-  case class Webauthn(credentialId: String) extends SupportedSecondFactor {
-    override def clientCode: String = s"PfiWebAuthn credentialId=${credentialId}"
-  }
-}
-case class SecondFactorRequired(msg: String, supported2fa: List[SupportedSecondFactor]) extends Failure
 
 case class PanDomainCookieInvalid(override val msg: String, reportAsFailure: Boolean) extends Failure
 

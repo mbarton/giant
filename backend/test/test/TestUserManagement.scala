@@ -1,6 +1,5 @@
 package test
 
-import model.frontend.user.TfaRegistration
 import model.manifest.Collection
 import model.user._
 import model.{Uri, user}

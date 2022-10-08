@@ -40,8 +40,15 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     }
   }
 
-  override def authenticate(request: Request[AnyContent], time: Epoch): Attempt[PartialUser] =
-    authenticateUser(request, time, RequireRegistered, tfa.check2fa).map(_.toPartial)
+  override def authenticate(request: Request[AnyContent], time: Epoch): Attempt[PartialUser] = for {
+    user <- authenticateUser(request, time, RequireRegistered, tfa.check2fa).recoverWith {
+      case SecondFactorRequired(username, _) =>
+        // The webauthn challenge is currently stored in the database
+        buildAndSave2faChallenge(username).flatMap { tfaChallenge =>
+          Attempt.Left(SecondFactorRequired(username, TfaChallengeParameters.toAuthenticateHeader(tfaChallenge)))
+        }
+    }
+  } yield user.toPartial
 
   override def genesisUser(request: JsValue, time: Epoch): Attempt[PartialUser] = {
     for {
@@ -118,15 +125,6 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     )
   }
 
-  // TODO MRB: should this give you back a challenge regardless of whether the user exists to avoid leaking
-  // that a username and password combination is correct?
-  override def get2faChallengeParameters(request: Request[AnyContent], time: Epoch): Attempt[TfaChallengeParameters] = for {
-    user <- authenticateUser(request, time, RequireRegistered, TwoFactorAuth.NoCheck)
-    username = user.username
-
-    user2faConfig <- buildAndSave2faConfiguration(username, user.tfa)
-  } yield user2faConfig
-
   def register2faMethod(username: String, registration: TfaRegistration, time: Epoch): Attempt[Unit] = for {
     user <- users.getUser(username)
     tfa <- tfa.checkRegistration(user.username, user.tfa, Some(registration), time)
@@ -145,6 +143,11 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
     } yield dbUser
   }
 
+  private def buildAndSave2faChallenge(username: String): Attempt[TfaChallengeParameters] = for {
+    user <- users.getUser(username)
+    tfaChallenge <- buildAndSave2faConfiguration(username, user.tfa)
+  } yield tfaChallenge
+
   private def buildAndSave2faConfiguration(username: String, existing2fa: DBUser2fa): Attempt[TfaChallengeParameters] = {
     if(config.require2FA && existing2fa.activeTotpSecret.isEmpty) {
       Attempt.Left(MisconfiguredAccount("2FA enrollment is required"))
@@ -155,8 +158,8 @@ class DatabaseUserProvider(val config: DatabaseAuthConfig, passwordHashing: Pass
       users.setUser2fa(username, new2fa).map { _ =>
         TfaChallengeParameters(
           totp = existing2fa.activeTotpSecret.nonEmpty,
-          webAuthnCredentialIds = new2fa.webAuthnAuthenticators.map(_.id.encode()),
-          webAuthnChallenge = challenge.encode()
+          webAuthnCredentialIds = new2fa.webAuthnAuthenticators.map(_.id),
+          webAuthnChallenge = challenge
         )
       }
     }

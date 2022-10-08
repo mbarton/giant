@@ -38,9 +38,9 @@ object FailureToResultMapper extends Logging {
       case MisconfiguredAccount(msg) =>
         logUserAndMessage(user, s"Misconfigured account: $msg")
         Results.Forbidden(msg)
-      case SecondFactorRequired(msg, supported2fa) =>
-        logUserAndMessage(user, s"Unauthorised, second factor auth required: $msg")
-        Results.Unauthorized(msg).withHeaders(HeaderNames.WWW_AUTHENTICATE -> supported2fa.map(_.clientCode).mkString(", "))
+      case err: SecondFactorRequired =>
+        logUserAndMessage(user, s"Unauthorised, second factor auth required: ${err.username}")
+        Results.Unauthorized(err.msg).withHeaders(HeaderNames.WWW_AUTHENTICATE -> err.wwwAuthenticateHeader)
       case PanDomainCookieInvalid(msg, _) =>
         logUserAndMessage(user, s"Pan domain login failure: $msg")
         Results.Unauthorized(msg).withHeaders(HeaderNames.WWW_AUTHENTICATE -> "Panda")

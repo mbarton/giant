@@ -1,6 +1,6 @@
 package utils.auth.providers
 
-import model.frontend.user.{PartialUser, TfaRegistration, TfaRegistrationParameters, TfaChallengeParameters}
+import model.frontend.user.{PartialUser, TfaRegistration, TfaRegistrationParameters}
 import play.api.libs.json._
 import play.api.mvc.{AnyContent, Request}
 import services.AuthProviderConfig
@@ -31,7 +31,6 @@ trait UserProvider {
   /** generate brand new 2FA secrets and challenges ready for a user to add their device * */
   def get2faRegistrationParameters(request: Request[AnyContent], time: Epoch): Attempt[TfaRegistrationParameters]
   /** get any configuration required to support 2fa (eg webauthn credential ids and challenge) */
-  def get2faChallengeParameters(request: Request[AnyContent], time: Epoch): Attempt[TfaChallengeParameters]
   /** register a new 2fa method */
   def register2faMethod(username: String, registration: TfaRegistration, time: Epoch): Attempt[Unit]
 }

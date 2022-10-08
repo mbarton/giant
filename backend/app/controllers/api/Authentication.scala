@@ -62,13 +62,6 @@ class Authentication(override val controllerComponents: AuthControllerComponents
     }
   }
 
-  def get2faChallengeParameters = noAuth.ApiAction.attempt { request: Request[AnyContent] =>
-    val time = Epoch.now
-    userAuthenticator.get2faChallengeParameters(request, time).map { params =>
-      Ok(Json.toJson(params))
-    }
-  }
-
   def keepalive() = auth.ApiAction.attempt {
     Attempt.Right(NoContent)
   }

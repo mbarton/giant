@@ -8,14 +8,14 @@ type WebAuthnPublicKeyRegistration = {
 export async function registerSecurityKey(challenge: string, name: string, userHandle: string, username: string, displayName: string): Promise<WebAuthnPublicKeyRegistration> {
     const resp = await navigator.credentials.create({
         publicKey: {
-            challenge: Uint8Array.from(atob(challenge), c => c.charCodeAt(0)),
+            challenge: fromBase64Url(challenge),
             rp: {
                 name,
                 // TODO MRB: get this from client config?
                 id: 'localhost'
             },
             user: {
-                id: Uint8Array.from(atob(userHandle), c => c.charCodeAt(0)),
+                id: fromBase64Url(userHandle),
                 name: username,
                 displayName: displayName
             },
@@ -41,7 +41,29 @@ export async function registerSecurityKey(challenge: string, name: string, userH
 
     return {
         id,
-        clientDataJson: btoa(String.fromCharCode(...new Uint8Array(clientDataJSON))),
-        attestationObject: btoa(String.fromCharCode(...new Uint8Array(attestationObject)))
+        clientDataJson: toBase64Url(clientDataJSON),
+        attestationObject: toBase64Url(attestationObject)
     };
+}
+
+// Would use Buffer here but they don't support base64url yet
+// https://github.com/feross/buffer/pull/314
+function fromBase64Url(input: string): Uint8Array {
+    return Uint8Array.from(
+        atob(
+            input
+                .replaceAll('-', '+')
+                .replaceAll('_', '/')
+        ),
+        c => c.charCodeAt(0)
+    );
+}
+
+function toBase64Url(input: ArrayBuffer): string {
+    return btoa(
+        String.fromCharCode(
+            ...new Uint8Array(input)
+        )
+    ).replaceAll('+', '-')
+        .replaceAll('/', '_')
 }

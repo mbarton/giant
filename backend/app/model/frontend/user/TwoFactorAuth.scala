@@ -1,6 +1,7 @@
 package model.frontend.user
 
-import play.api.libs.json.{Format, JsError, JsObject, JsResult, JsValue, Json, Reads, Writes}
+import play.api.libs.json._
+import utils.auth.webauthn.WebAuthn
 
 /**
  * Sent to the client before registering a new 2fa method
@@ -54,14 +55,24 @@ object TfaRegistration {
   }
 }
 
-object TfaG
-
 /**
  * What 2fa methods can be used. Sent to the client before performing 2fa
  */
-case class TfaChallengeParameters(totp: Boolean, webAuthnCredentialIds: List[String], webAuthnChallenge: String)
+case class TfaChallengeParameters(totp: Boolean, webAuthnCredentialIds: List[WebAuthn.CredentialId], webAuthnChallenge: WebAuthn.Challenge)
 object TfaChallengeParameters {
-  implicit val format: Format[TfaChallengeParameters] = Json.format
+  def toAuthenticateHeader(params: TfaChallengeParameters): String = {
+    List(
+      // Retain the generic name for compatibility with older versions of Giant CLI
+      if(params.totp) { Some("Pfi2fa") } else { None },
+      if(params.webAuthnCredentialIds.nonEmpty) {
+        Some(s"PfiWebAuthn challenge=${params.webAuthnChallenge.encode()} ${params.webAuthnCredentialIds.zipWithIndex.map {
+          case (id, ix) => s"credential$ix=${id.encode()}"
+        }.mkString(" ")}")
+      } else {
+        None
+      }
+    ).flatten.mkString(", ")
+  }
 }
 
 sealed trait TfaChallengeResponse

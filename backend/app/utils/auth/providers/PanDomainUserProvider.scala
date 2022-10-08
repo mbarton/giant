@@ -2,8 +2,9 @@ package utils.auth.providers
 
 import com.gu.pandomainauth.model._
 import com.gu.pandomainauth.{PanDomain, PublicKey}
-import model.frontend.user.{PartialUser, TfaChallengeParameters, TfaRegistration, TfaRegistrationParameters}
+import model.frontend.user.PartialUser
 import model.user.{DBUser, DBUser2fa, UserPermissions}
+import model.frontend.user.{TfaChallengeParameters, TfaRegistration, TfaRegistrationParameters}
 import play.api.libs.json.{JsString, JsValue}
 import play.api.mvc.{AnyContent, Request}
 import services.users.UserManagement
@@ -91,7 +92,6 @@ class PanDomainUserProvider(val config: PandaAuthConfig, currentPublicKey: () =>
   /** None of these make sense for a pan domain authed user so we return a failure **/
   override def updatePassword(username: String, newPassword: String): Attempt[Unit] = unsupportedOperation
   override def get2faRegistrationParameters(request: Request[AnyContent], time: Epoch): Attempt[TfaRegistrationParameters] = unsupportedOperation
-  override def get2faChallengeParameters(request: Request[AnyContent], time: Epoch): Attempt[TfaChallengeParameters] = unsupportedOperation
   override def register2faMethod(username: String, registration: TfaRegistration, time: Epoch): Attempt[Unit] = unsupportedOperation
   override def registerUser(userData: JsValue, time: Epoch): Attempt[Unit] = unsupportedOperation
 

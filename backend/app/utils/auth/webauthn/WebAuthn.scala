@@ -15,8 +15,8 @@ import com.webauthn4j.data.extension.client.{AuthenticationExtensionsClientOutpu
 import com.webauthn4j.data.{AuthenticatorTransport, RegistrationParameters, RegistrationRequest}
 import com.webauthn4j.server.ServerProperty
 import com.webauthn4j.validator.exception.ValidationException
-import model.frontend.user.WebAuthnPublicKeyRegistration
 import model.user.DBUser2fa
+import model.frontend.user.WebAuthnPublicKeyRegistration
 import play.api.libs.json.{Format, JsArray, JsNumber, JsResult, JsString, JsValue, Json}
 import utils.Logging
 import utils.attempt._
@@ -40,7 +40,7 @@ object WebAuthn extends Logging {
   // It is RECOMMENDED to let the user handle be 64 random bytes, and store this value in the user’s account
   // https://www.w3.org/TR/webauthn-2/#sctn-user-handle-privacy
   case class UserHandle(data: Vector[Byte]) {
-    def encode(): String = toBase64(data)
+    def encode(): String = toBase64Url(data)
   }
   object UserHandle {
     def apply(data: Vector[Byte]): UserHandle = {
@@ -52,13 +52,13 @@ object WebAuthn extends Logging {
       UserHandle(ssg.createRandomSecret(Algorithm.HmacSHA512).data)
     }
 
-    def decode(input: String): UserHandle = UserHandle(fromBase64(input))
+    def decode(input: String): UserHandle = UserHandle(fromBase64Url(input))
   }
 
   // Challenges SHOULD therefore be at least 16 bytes long.
   // https://www.w3.org/TR/webauthn-2/#sctn-cryptographic-challenges
   case class Challenge(data: Vector[Byte]) {
-    def encode(): String = toBase64(data)
+    def encode(): String = toBase64Url(data)
   }
 
   object Challenge {
@@ -71,16 +71,15 @@ object WebAuthn extends Logging {
       Challenge(ssg.createRandomSecret(Algorithm.HmacSHA256).data)
     }
 
-    def decode(input: String): Challenge = Challenge(fromBase64(input))
+    def decode(input: String): Challenge = Challenge(fromBase64Url(input))
   }
 
   case class CredentialId(data: Vector[Byte]) {
-    def encode(): String = toBase64(data)
-    def encodeUrl(): String = toBase64Url(data)
+    def encode(): String = toBase64Url(data)
   }
 
   object CredentialId {
-    def decode(input: String): CredentialId = CredentialId(fromBase64(input))
+    def decode(input: String): CredentialId = CredentialId(fromBase64Url(input))
   }
 
   // https://webauthn4j.github.io/webauthn4j/en/#representation-of-an-authenticator
@@ -104,11 +103,11 @@ object WebAuthn extends Logging {
     val format: Format[WebAuthn4jAuthenticator] = new Format[WebAuthn4jAuthenticator] {
       override def reads(json: JsValue): JsResult[WebAuthn4jAuthenticator] = for {
         id <- (json \ "id").validate[String].map(CredentialId.decode)
-        attestedCredentialData <- (json \ "attestedCredentialData").validate[String].map { v => attestedCredentialDataConverter.convert(fromBase64(v).toArray) }
+        attestedCredentialData <- (json \ "attestedCredentialData").validate[String].map { v => attestedCredentialDataConverter.convert(fromBase64Url(v).toArray) }
         transports <- (json \ "transports").validate[List[String]].map(_.map(AuthenticatorTransport.create)).map(_.toSet)
         counter <- (json \ "counter").validate[Long]
         authenticatorExtensions <- (json \ "authenticatorExtensions").validate[String].map { v =>
-          webAuthnObjectConverter.getCborConverter.readValue[AuthenticationExtensionsAuthenticatorOutputs[_]](fromBase64(v).toArray, classOf[AuthenticationExtensionsAuthenticatorOutputs[_]])
+          webAuthnObjectConverter.getCborConverter.readValue[AuthenticationExtensionsAuthenticatorOutputs[_]](fromBase64Url(v).toArray, classOf[AuthenticationExtensionsAuthenticatorOutputs[_]])
         }
         clientExtensions <- (json \ "clientExtensions").validate[String].map { v =>
           webAuthnObjectConverter.getJsonConverter.readValue[AuthenticationExtensionsClientOutputs[_]](v, classOf[AuthenticationExtensionsClientOutputs[_]])
@@ -126,10 +125,10 @@ object WebAuthn extends Logging {
       override def writes(o: WebAuthn4jAuthenticator): JsValue = {
         Json.obj(
           "id" -> JsString(o.id.encode()),
-          "attestedCredentialData" -> JsString(toBase64(attestedCredentialDataConverter.convert(o.attestedCredentialData).toVector)),
+          "attestedCredentialData" -> JsString(toBase64Url(attestedCredentialDataConverter.convert(o.attestedCredentialData).toVector)),
           "transports" -> JsArray(o.transports.map { t => JsString(t.toString) }.toList),
           "counter" -> JsNumber(o.counter),
-          "authenticatorExtensions" -> JsString(toBase64(webAuthnObjectConverter.getCborConverter.writeValueAsBytes(o.authenticatorExtensions).toVector)),
+          "authenticatorExtensions" -> JsString(toBase64Url(webAuthnObjectConverter.getCborConverter.writeValueAsBytes(o.authenticatorExtensions).toVector)),
           "clientExtensions" -> JsString(webAuthnObjectConverter.getJsonConverter.writeValueAsString(o.authenticatorExtensions))
         )
       }
@@ -140,19 +139,17 @@ object WebAuthn extends Logging {
     }
   }
 
-  private def toBase64(data: Vector[Byte]): String = Base64.getEncoder.encodeToString(data.toArray)
+  private def toBase64Url(data: Vector[Byte]): String = Base64.getUrlEncoder.withoutPadding().encodeToString(data.toArray)
 
-  private def fromBase64(data: String): Vector[Byte] = Base64.getDecoder.decode(data).toVector
-
-  private def toBase64Url(bytes: Vector[Byte]): String = Base64.getUrlEncoder.withoutPadding().encodeToString(bytes.toArray  )
+  private def fromBase64Url(data: String): Vector[Byte] = Base64.getUrlDecoder.decode(data).toVector
 
   def verifyRegistration(username: String, tfa: DBUser2fa, registration: WebAuthnPublicKeyRegistration, ssg: SecureSecretGenerator): Attempt[DBUser2fa] = {
     val challenge = new WebAuthn4JChallenge(tfa.webAuthnChallenge.get.data.toArray)
     val serverProperty = new ServerProperty(new Origin(origin), rpId, challenge, null)
 
     val registrationRequest = new RegistrationRequest(
-      fromBase64(registration.attestationObject).toArray,
-      fromBase64(registration.clientDataJson).toArray
+      fromBase64Url(registration.attestationObject).toArray,
+      fromBase64Url(registration.clientDataJson).toArray
     )
 
     val registrationParameters = new RegistrationParameters(
