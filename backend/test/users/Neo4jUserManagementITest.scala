@@ -1,5 +1,8 @@
 package users
 
+import com.webauthn4j.data.attestation.authenticator.{AAGUID, AttestedCredentialData, EC2COSEKey}
+import com.webauthn4j.data.extension.authenticator.{AuthenticationExtensionsAuthenticatorOutputs, RegistrationExtensionAuthenticatorOutput}
+import com.webauthn4j.data.extension.client.{AuthenticationExtensionsClientOutputs, RegistrationExtensionClientOutput}
 import model.user._
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.freespec.AnyFreeSpec
@@ -11,8 +14,10 @@ import services.users.Neo4jUserManagement
 import test.TestUserManagement
 import test.integration.Neo4jTestService
 import utils.Logging
-import utils.auth.totp.{SecureSecretGenerator, Totp}
+import utils.auth.totp.{Algorithm, SecureSecretGenerator, Totp}
+import utils.auth.webauthn.WebAuthn
 
+import java.util.UUID
 import scala.concurrent.ExecutionContext.Implicits.global
 
 class Neo4jUserManagementITest extends AnyFreeSpec with Matchers with Neo4jTestService with Logging with MockFactory {
@@ -68,43 +73,45 @@ class Neo4jUserManagementITest extends AnyFreeSpec with Matchers with Neo4jTestS
       }
     }
 
-    // TODO MRB: fix this test
-//    "Can save 2fa config with webauthn keys" in {
-//      new TestSetup {
-//        val username = user.username
-//
-//        val key1 = WebAuthnPublicKey(Vector.fill(1)(1.toByte), Vector.fill(2)(2.toByte))
-//        val key2 = WebAuthnPublicKey(Vector.fill(3)(3.toByte), Vector.fill(4)(4.toByte))
-//
-//        val before = DBUser2fa.initial(ssg, totp).copy(webAuthnPublicKeys = List(key1, key2))
-//
-//        users.setUser2fa(username, before).successValue
-//
-//        val after = users.getUser(username).successValue.tfa
-//        val keysAfter = after.webAuthnPublicKeys.toSet
-//
-//        keysAfter should contain only(key1, key2)
-//      }
-//    }
+    "Can save 2fa config with webauthn keys" in {
+      new TestSetup {
+        val username = user.username
 
-//    "Can save webauthn keys for multiple users" in {
-//      new TestSetup {
-//        val key1 = WebAuthnPublicKey(Vector.fill(1)(10.toByte), Vector.fill(2)(12.toByte))
-//        val key2 = WebAuthnPublicKey(Vector.fill(3)(13.toByte), Vector.fill(4)(14.toByte))
-//
-//        val user1TfaBefore = DBUser2fa.initial(ssg, totp).copy(webAuthnPublicKeys = List(key1))
-//        val user2TfaBefore = DBUser2fa.initial(ssg, totp).copy(webAuthnPublicKeys = List(key2))
-//
-//        users.setUser2fa(user.username, user1TfaBefore).successValue
-//        users.setUser2fa(user2.username, user2TfaBefore).successValue
-//
-//        val user1TfaAfter = users.getUser(user.username).successValue.tfa
-//        val user2TfaAfter = users.getUser(user2.username).successValue.tfa
-//
-//        user1TfaAfter shouldBe user1TfaBefore
-//        user2TfaAfter shouldBe user2TfaBefore
-//      }
-//    }
+        val key1 = webAuthnAuthenticator()
+        val key2 = webAuthnAuthenticator()
+
+        val before = DBUser2fa.initial(ssg, totp).copy(webAuthnAuthenticators = List(key1, key2))
+
+        users.setUser2fa(username, before).successValue
+
+        val after = users.getUser(username).successValue.tfa
+        val keysAfter = after.webAuthnAuthenticators
+
+        val credentialIdsBefore = Set(key1.id, key2.id)
+        val credentialIdsAfter = keysAfter.map(_.id).toSet
+
+        credentialIdsAfter shouldBe credentialIdsBefore
+      }
+    }
+
+    "Can save webauthn keys for multiple users" in {
+      new TestSetup {
+        val key1 = webAuthnAuthenticator()
+        val key2 = webAuthnAuthenticator()
+
+        val user1TfaBefore = DBUser2fa.initial(ssg, totp).copy(webAuthnAuthenticators = List(key1))
+        val user2TfaBefore = DBUser2fa.initial(ssg, totp).copy(webAuthnAuthenticators = List(key2))
+
+        users.setUser2fa(user.username, user1TfaBefore).successValue
+        users.setUser2fa(user2.username, user2TfaBefore).successValue
+
+        val user1CredentialIdsAfter = users.getUser(user.username).successValue.tfa.webAuthnAuthenticators.map(_.id)
+        val user2CredentialIdsAfter = users.getUser(user2.username).successValue.tfa.webAuthnAuthenticators.map(_.id)
+
+        user1CredentialIdsAfter should contain only(key1.id)
+        user2CredentialIdsAfter should contain only(key2.id)
+      }
+    }
   }
 
   class TestSetup {
@@ -119,5 +126,22 @@ class Neo4jUserManagementITest extends AnyFreeSpec with Matchers with Neo4jTestS
     val ssg = new SecureSecretGenerator
 
     val users = Neo4jUserManagement(neo4jDriver, global, neo4jQueryLoggingConfig, manifest, index, pages, annotations)
+
+    def webAuthnAuthenticator(): WebAuthn.WebAuthn4jAuthenticator = {
+      val credentialId = WebAuthn.CredentialId(ssg.createRandomSecret(Algorithm.HmacSHA256).data)
+
+      WebAuthn.WebAuthn4jAuthenticator(
+        id = credentialId,
+        attestedCredentialData = new AttestedCredentialData(
+          new AAGUID(UUID.randomUUID()),
+          credentialId.data.toArray,
+          EC2COSEKey.createFromUncompressedECCKey(Array.fill(65)(0))
+        ),
+        transports = Set.empty,
+        counter = 0,
+        authenticatorExtensions = new AuthenticationExtensionsAuthenticatorOutputs[RegistrationExtensionAuthenticatorOutput],
+        clientExtensions = new AuthenticationExtensionsClientOutputs[RegistrationExtensionClientOutput]
+      )
+    }
   }
 }
