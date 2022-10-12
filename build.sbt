@@ -92,6 +92,15 @@ lazy val common = (project in file("common"))
     )
   )
 
+lazy val extractorApi = (project in file("extractor-api"))
+  .settings(
+    name := "extractor-api",
+    libraryDependencies ++= Seq(
+      "org.apache.thrift" % "libthrift" % "0.17.0",
+      "com.twitter" %% "scrooge-core" % "22.7.0"
+    )
+  )
+
 import play.sbt.routes.RoutesKeys
 
 lazy val backend = (project in file("backend"))
