@@ -409,25 +409,31 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
       ).asJava
     }
 
-    tx.run(
+    val result = tx.run(
       """
-        |MERGE (parent :Resource { uri: {parentUri} })<-[:PARENT]-(page :Resource :Page { uri: {pageUri} })
+        |MATCH (parent :Resource { uri: {parentUri} })
+        |
+        |MERGE (page :Resource { uri: {pageUri} })
+        |SET page:Page
+        |SET page.pageNumber = {pageNumber}
+        |
+        |MERGE (parent)<-[:PARENT]-(page)
         |
         |WITH {extractorParamsArray} as extractors
         |UNWIND extractors as extractorParam
         |  MERGE (extractor :Extractor {name: extractorParam.name, indexing: extractorParam.indexing, priority: extractorParam.extractorPriority})
         |    WITH extractor, extractorParam.cost as cost, extractorParam.priority as priority
         |
-        |  MATCH (unprocessedBlob: Blob:Resource {uri: {blobUri}})
+        |  MATCH (unprocessedPage :Resource {uri: {pageUri}})
         |    WHERE
-        |      NOT (unprocessedBlob)<-[:PROCESSED {
+        |      NOT (unprocessedPage)<-[:PROCESSED {
         |        ingestion: {ingestion},
-        |        languages: {languages},
+        |        languages: {languages}
         |      } ]-(extractor)
         |
-        |  MERGE (unprocessedBlob)<-[todo:TODO {
+        |  MERGE (unprocessedPage)<-[todo:TODO {
         |    ingestion: {ingestion},
-        |    languages: {languages},
+        |    languages: {languages}
         |  }]-(extractor)
         |    ON CREATE SET todo.cost = cost,
         |                  todo.priority = priority,
@@ -436,13 +442,20 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
       parameters(
         "parentUri", documentBlob.uri.value,
         "pageUri", documentBlob.uri.chain(pageNumber.toString).value,
+        "pageNumber", Long.box(pageNumber),
         "extractorParamsArray", extractors.map(toParameterMap).toArray,
         "ingestion", ingestion,
         "languages", languages.asJava
       )
     )
 
-    Right(())
+    val counters = result.summary().counters()
+
+    if (counters.nodesCreated() < 1 || counters.relationshipsCreated() < 1) {
+      Left(IllegalStateFailure(s"Unexpected number of nodes or relationshiops created in insertPage. nodesCreated: ${counters.nodesCreated()}. ${counters.relationshipsCreated()}"))
+    } else {
+      Right(())
+    }
   }
 
   override def fetchWork(workerName: String, maxBatchSize: Int, maxCost: Int): Either[Failure, List[WorkItem]] = transaction { tx =>
@@ -452,17 +465,17 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
         |  WITH
         |    worker
         |
-        |MATCH (e: Extractor)-[todo: TODO]->(b: Blob:Resource)
+        |MATCH (e: Extractor)-[todo: TODO]->(r :Resource)
         |  WHERE
-        |    NOT (b)-[:LOCKED_BY]->(:Worker) AND todo.attempts < {maxExtractionAttempts}
+        |    NOT (r)-[:LOCKED_BY]->(:Worker) AND todo.attempts < {maxExtractionAttempts}
         |
-        |  WITH worker, todo, e, b
+        |  WITH worker, todo, e, r
         |  // priority was originally just defined for extractors, we later extended it out to todos as well
         |  // This maintains roll forward/backward compatibility with both
         |  ORDER BY coalesce(todo.priority, e.priority) DESC
         |  LIMIT {maxBatchSize}
         |
-        |WITH collect({todo: todo, extractor: e, blob: b, worker: worker}) as allTasks
+        |WITH collect({todo: todo, extractor: e, resource: r, worker: worker}) as allTasks
         |WITH tail(reduce(acc = [0, []], task in allTasks |
         |    case
         |      when size(acc[1]) > 0 AND (acc[0] + task.todo.cost) >= {maxCost}
@@ -473,14 +486,14 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
         |  )) as tasks
         |
         |UNWIND tasks[0] as task
-        |  MATCH (blob: Blob:Resource { uri: task.blob.uri })-[:TYPE_OF]-(m: MimeType)
+        |  MATCH (resource :Resource { uri: task.resource.uri })-[:TYPE_OF]-(m: MimeType)
         |  MATCH (worker :Worker { name: task.worker.name })
         |
         |  SET task.todo.attempts = task.todo.attempts + 1
-        |  MERGE (blob)-[:LOCKED_BY]->(worker)
+        |  MERGE (resource)-[:LOCKED_BY]->(worker)
         |
         |  RETURN
-        |    blob,
+        |    resource,
         |    collect(m) as types,
         |    task.extractor.name as extractorName,
         |    task.todo.ingestion as ingestion,
@@ -499,7 +512,8 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
     )
 
     Right(summary.list().asScala.toList.map { r =>
-      val rawBlob = r.get("blob")
+      // TODO MRB: where should we do the sleight of hand? Here is maybe fine to avoid changing lots of code
+      val rawBlob = r.get("resource")
       val mimeTypes = r.get("types").values()
 
       val blob = Blob.fromNeo4jValue(rawBlob, mimeTypes.asScala.toSeq)

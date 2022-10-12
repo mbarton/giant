@@ -5,7 +5,6 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, Paths}
 import java.time.format.DateTimeFormatter
 import java.time.{OffsetDateTime, ZoneOffset}
-
 import com.google.common.hash.Hashing
 import commands.IngestFile
 import extraction.{ExtractionParams, Extractor, MimeTypeMapper}
@@ -22,7 +21,7 @@ import test.AttemptValues
 import test.integration.Neo4jTestService
 import utils.attempt.{Failure, MissingPermissionFailure, NotFoundFailure}
 import utils.attempt._
-import utils.Logging
+import utils.{CustomMimeTypes, Logging}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import org.scalatest.freespec.AnyFreeSpec
@@ -95,7 +94,7 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
       )
 
       "Can insert emails" in {
-        val result = manifest.insert(emails, Uri("test-collection/test-ingestion"))
+        val result = manifest.insert(emails)
         if (result.isLeft) {
           val value = result.left.get
           logger.warn(value.toString, value.cause.get)
@@ -166,6 +165,17 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
         )
       }
 
+      def page(documentUri: Uri, pageNumber: Long, extractors: List[Extractor], ingestion: String, size: Long = 1024L) = {
+        Manifest.InsertPage(
+          Blob(documentUri, size, Set(CustomMimeTypes.pdfPage)),
+          pageNumber,
+          ingestion,
+          List(English.key),
+          extractors,
+          workspace = None
+        )
+      }
+
       def fetchWork(worker: String, maxBatchSize: Int, maxCost: Int = 10000): List[(Uri, String)] = {
         val result = manifest.fetchWork(worker, maxBatchSize, maxCost)
         result.right.get.map { case WorkItem(blob, _, extractor, _, List(English), _) => blob.uri -> extractor }
@@ -182,12 +192,16 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
         manifest.markAsComplete(ExtractionParams(ingestion, List(English), List.empty, None), Blob(blob.blobUri, 0, Set.empty), extractor)
       }
 
+      def markPageAsComplete(page: Manifest.InsertPage, ingestion: String, extractor: Extractor) = {
+        manifest.markAsComplete(ExtractionParams(ingestion, List(English), List.empty, None), Blob(page.documentBlob.uri.chain(page.pageNumber.toString), 0, Set.empty), extractor)
+      }
+
       "Can retrieve work by extractor priority" in {
         val blobs = buildBlobs("priority_test", "priority_test/test")
 
         manifest.insertCollection("priority_test", "priority_test", "test").eitherValue.isRight should be(true)
         manifest.insertIngestion(Uri("priority_test"), Uri("priority_test/test"), "test", None, List(English), fixed = false, default = false).eitherValue.isRight should be(true)
-        manifest.insert(blobs, Uri("priority_test/test")).isRight should be(true)
+        manifest.insert(blobs).isRight should be(true)
 
         fetchWork("test", maxBatchSize = 2) should contain allOf(
           blobs(0).blobUri -> "ArchiveExtractor",
@@ -232,7 +246,7 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
 
         manifest.insertCollection("cost_test", "cost_test", "test").eitherValue.isRight should be(true)
         manifest.insertIngestion(Uri("cost_test"), Uri("cost_test/test"), "test", None, List(English), fixed = false, default = false).eitherValue.isRight should be(true)
-        manifest.insert(blobs, Uri("cost_test/test")).isRight should be(true)
+        manifest.insert(blobs).isRight should be(true)
 
         fetchWork("test", maxBatchSize = 10, maxCost = 30) should contain only(
           blobs(0).blobUri -> "DocumentBodyExtractor",
@@ -264,7 +278,7 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
 
         manifest.insertCollection("single_heavy", "single_heavy", "test").eitherValue.isRight should be(true)
         manifest.insertIngestion(Uri("single_heavy"), Uri("single_heavy/test"), "test", None, List(English), fixed = false, default = false).eitherValue.isRight should be(true)
-        manifest.insert(blobs, Uri("single_heavy/test")).isRight should be(true)
+        manifest.insert(blobs).isRight should be(true)
 
         fetchWork("test", maxBatchSize = 10, maxCost = 5) should contain only(
           blobs(0).blobUri -> "PdfOcrExtractor"
@@ -284,7 +298,7 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
 
         manifest.insertCollection("lock_breaking", "lock_breaking", "test").eitherValue.isRight should be(true)
         manifest.insertIngestion(Uri("lock_breaking"), Uri("lock_breaking/test"), "test", None, List(English), fixed = false, default = false).eitherValue.isRight should be(true)
-        manifest.insert(blobs, Uri("lock_breaking/test")).isRight should be(true)
+        manifest.insert(blobs).isRight should be(true)
 
         fetchWork("workerOne", maxBatchSize = 10, maxCost = 5) should contain only(
           blobs(0).blobUri -> "PdfOcrExtractor"
@@ -304,7 +318,7 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
 
         manifest.insertCollection("distribution_test", "distribution_test", "test").eitherValue.isRight should be(true)
         manifest.insertIngestion(Uri("distribution_test"), Uri("distribution_test/test"), "test", None, List(English), fixed = false, default = false).eitherValue.isRight should be(true)
-        manifest.insert(blobs, Uri("distribution_test/test")).isRight should be(true)
+        manifest.insert(blobs).isRight should be(true)
 
         fetchWork("worker_one", maxBatchSize = 2) should contain allOf(
           blobs(0).blobUri -> "ArchiveExtractor",
@@ -322,7 +336,7 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
 
         manifest.insertCollection("skip_attempted_test", "skip_attempted_test","test").eitherValue.isRight should be(true)
         manifest.insertIngestion(Uri("skip_attempted_test"), Uri("skip_attempted_test/test"), "test", None, List(English), fixed = false, default = false).eitherValue.isRight should be(true)
-        manifest.insert(blobs, Uri("skip_attempted_test/test")).isRight should be(true)
+        manifest.insert(blobs).isRight should be(true)
 
         for(_ <- 0 until manifest.maxExtractionAttempts) {
           val (uri, _) = fetchWork("worker_one", maxBatchSize = 1).head
@@ -348,7 +362,7 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
           blob(ingestions(0).chain("zip2"), List(extractors("ArchiveExtractor")), ingestions(0).value)
         )
 
-        manifest.insert(blobs, collection).isRight should be(true)
+        manifest.insert(blobs).isRight should be(true)
 
         val rawResults = manifest.fetchWork("test", maxBatchSize = 3, maxCost = 10000).right.get
         val results = rawResults.map { case WorkItem(blob, _, _,  ingestion, List(English), _) => blob.uri -> ingestion }
@@ -376,16 +390,51 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
             workspace = Some("test-workspace"))
         )
 
-        manifest.insert(List(blobs(0)), collection).isRight should be(true)
+        manifest.insert(List(blobs(0))).isRight should be(true)
 
         val firstItem = manifest.fetchWork("test", maxBatchSize = 1, maxCost = 10000).right.get.head
         firstItem.blob.uri should be(blobs(0).blobUri)
 
-        val wut = manifest.insert(List(blobs(1), blobs(2)), collection)
+        val wut = manifest.insert(List(blobs(1), blobs(2)))
         wut.isRight should be(true)
 
         val secondItem = manifest.fetchWork("test", maxBatchSize = 1, maxCost = 10000).right.get.head
         secondItem.blob.uri should be(blobs(2).blobUri)
+      }
+
+      "Can get work for pages" in {
+        val pdfPageOcrExtractor = extractor("PdfPageOcrExtractor", 1, _ * 100)
+        val documentUri = Uri(s"pages_test/test.pdf")
+
+        val pages = List(
+          page(documentUri, 1, List(pdfPageOcrExtractor), ingestion = "pages_test/test"),
+          page(documentUri, 2, List(pdfPageOcrExtractor), ingestion = "pages_test/test"),
+          page(documentUri, 3, List(pdfPageOcrExtractor), ingestion = "pages_test/test")
+        )
+
+        manifest.insertCollection("pages_test", "pages_test", "test").eitherValue.isRight should be(true)
+        manifest.insertIngestion(Uri("pages_test"), Uri("pages_test/test"), "test", None, List(English), fixed = false, default = false).eitherValue.isRight should be(true)
+
+        manifest.insert(Seq(blob(documentUri, List.empty, "pages_test/test"))).isRight should be(true)
+
+        manifest.insert(pages).isRight should be(true)
+
+        fetchWork("test", maxBatchSize = 10, maxCost = 30) should contain only(
+          documentUri.chain("1") -> "PdfPageOcrExtractor",
+          documentUri.chain("2") -> "PdfPageOcrExtractor",
+          documentUri.chain("3") -> "PdfPageOcrExtractor"
+        )
+
+        markPageAsComplete(pages(0), "pages_test/test", extractors("PdfPageOcrExtractor")).isRight should be(true)
+        markPageAsComplete(pages(1), "pages_test/test", extractors("PdfPageOcrExtractor")).isRight should be(true)
+        markPageAsComplete(pages(2), "pages_test/test", extractors("PdfPageOcrExtractor")).isRight should be(true)
+        manifest.releaseLocks("test").isRight should be(true)
+
+        fetchWork("test", maxBatchSize = 10, maxCost = 30) shouldBe empty
+      }
+
+      "Can get a mixture of work for blobs and pages" in {
+        ???
       }
     }
 
