@@ -486,8 +486,9 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
         |  )) as tasks
         |
         |UNWIND tasks[0] as task
-        |  MATCH (resource :Resource { uri: task.resource.uri })-[:TYPE_OF]-(m: MimeType)
+        |  MATCH (resource :Resource { uri: task.resource.uri })
         |  MATCH (worker :Worker { name: task.worker.name })
+        |  OPTIONAL MATCH (resource)-[:TYPE_OF]-(m: MimeType)
         |
         |  SET task.todo.attempts = task.todo.attempts + 1
         |  MERGE (resource)-[:LOCKED_BY]->(worker)
@@ -512,11 +513,17 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
     )
 
     Right(summary.list().asScala.toList.map { r =>
-      // TODO MRB: where should we do the sleight of hand? Here is maybe fine to avoid changing lots of code
-      val rawBlob = r.get("resource")
-      val mimeTypes = r.get("types").values()
+      val rawResource = r.get("resource")
 
-      val blob = Blob.fromNeo4jValue(rawBlob, mimeTypes.asScala.toSeq)
+      val resourceUri = rawResource.get("uri").asString()
+      val isPage = rawResource.asNode().labels().asScala.toList.contains("Page")
+
+      val blob = if(isPage) {
+        Blob(Uri(resourceUri), -1, Set(CustomMimeTypes.pdfPage))
+      } else {
+        Blob.fromNeo4jValue(rawResource, r.get("types").values().asScala.toSeq)
+      }
+
       val extractorName = r.get("extractorName").asString()
 
       val ingestion = r.get("ingestion").asString()
@@ -534,8 +541,8 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
       val rawLanguages = r.get("languages")
       val rawParentBlobs = r.get("parentBlobs")
 
-      if(rawLanguages.isNull || rawParentBlobs.isNull) {
-        val message = s"NULL languages or parentBlobs! blob: ${blob}. extractorName: ${extractorName}. ingestion: ${ingestion}. rawParentBlobs: ${rawParentBlobs}. rawLanguages: ${rawLanguages}. workspaceId: ${workspaceId}. workspaceNodeId: ${workspaceNodeId}. workspaceBlobUri: ${workspaceBlobUri}"
+      if(rawLanguages.isNull || (rawParentBlobs.isNull && !isPage)) {
+        val message = s"NULL languages or parentBlobs! resource: ${resourceUri}. extractorName: ${extractorName}. ingestion: ${ingestion}. rawParentBlobs: ${rawParentBlobs}. rawLanguages: ${rawLanguages}. workspaceId: ${workspaceId}. workspaceNodeId: ${workspaceNodeId}. workspaceBlobUri: ${workspaceBlobUri}"
         logger.error(message)
 
         throw new IllegalStateException(message)

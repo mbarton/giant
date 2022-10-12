@@ -403,7 +403,7 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
       }
 
       "Can get work for pages" in {
-        val pdfPageOcrExtractor = extractor("PdfPageOcrExtractor", 1, _ * 100)
+        val pdfPageOcrExtractor = extractor("PdfPageOcrExtractor", 1, identity)
         val documentUri = Uri(s"pages_test/test.pdf")
 
         val pages = List(
