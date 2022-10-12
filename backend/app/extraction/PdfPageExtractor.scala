@@ -34,9 +34,9 @@ class PdfPageExtractor(scratch: ScratchSpace, previewStorage: ObjectStorage, ing
 
       for(pageNumber <- 1 until totalPages) {
         val page = document.getPage(pageNumber - 1)
-        uploadPageAsSeparatePdf(blob, pageNumber, page, previewStorage)
+        val pagePdfSize = uploadPageAsSeparatePdf(blob, pageNumber, page, previewStorage)
 
-        ingestionServices.ingestPage(builder.finishWithPage(pageNumber))
+        ingestionServices.ingestPage(builder.finishWithPage(pageNumber), pagePdfSize)
       }
 
       Right(())
@@ -46,7 +46,7 @@ class PdfPageExtractor(scratch: ScratchSpace, previewStorage: ObjectStorage, ing
     }
   }
 
-  private def uploadPageAsSeparatePdf(blob: Blob, pageNumber: Int, page: PDPage, previewStorage: ObjectStorage) = {
+  private def uploadPageAsSeparatePdf(blob: Blob, pageNumber: Int, page: PDPage, previewStorage: ObjectStorage): Long = {
     val doc = new PDDocument()
     val tempFile = Files.createTempFile(s"${blob.uri}-${pageNumber}", ".pdf")
 
@@ -56,6 +56,8 @@ class PdfPageExtractor(scratch: ScratchSpace, previewStorage: ObjectStorage, ing
 
       val key = PreviewService.getPageStoragePath(blob.uri, language = None, pageNumber)
       previewStorage.create(key, tempFile, Some("application/pdf"))
+
+      Files.size(tempFile)
     } finally {
       doc.close()
       Files.deleteIfExists(tempFile)

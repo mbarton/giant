@@ -42,7 +42,7 @@ private case class UriJustParent(parent: Uri) extends UriParent
 trait IngestionServices {
   def ingestEmail(context: EmailContext, sourceMimeType: String): Either[Failure, Unit]
   def ingestFile(context: FileContext, blobUri: Uri, path: Path): Either[Failure, Blob]
-  def ingestPage(context: PageContext): Either[Failure, Unit]
+  def ingestPage(context: PageContext, pagePdfSize: Long): Either[Failure, Unit]
   def setProgressNote(blobUri: Uri, extractor: Extractor, note: String): Either[Failure, Unit]
 }
 
@@ -106,11 +106,12 @@ object IngestionServices extends Logging {
       }
     }
 
-    override def ingestPage(context: PageContext): Either[Failure, Unit] = {
+    override def ingestPage(context: PageContext, pagePdfSize: Long): Either[Failure, Unit] = {
       manifest.getBlob(context.documentBlobUri).map { documentBlob =>
         manifest.insert(Seq(InsertPage(
           documentBlob,
           context.pageNumber,
+          pagePdfSize,
           context.ingestion,
           context.languages.map(_.key),
           mimeTypeMapper.getExtractorsFor(CustomMimeTypes.pdfPage.mimeType),

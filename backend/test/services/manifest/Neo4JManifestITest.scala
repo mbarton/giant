@@ -165,10 +165,11 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
         )
       }
 
-      def page(documentUri: Uri, pageNumber: Long, extractors: List[Extractor], ingestion: String, size: Long = 1024L) = {
+      def page(documentUri: Uri, pageNumber: Long, extractors: List[Extractor], ingestion: String, blobSize: Long = 1024L, pageSize: Long = 8L) = {
         Manifest.InsertPage(
-          Blob(documentUri, size, Set(CustomMimeTypes.pdfPage)),
+          Blob(documentUri, blobSize, Set(CustomMimeTypes.pdfPage)),
           pageNumber,
+          pageSize,
           ingestion,
           List(English.key),
           extractors,
@@ -425,9 +426,10 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
           documentUri.chain("3") -> "PdfPageOcrExtractor"
         )
 
-        markPageAsComplete(pages(0), "pages_test/test", extractors("PdfPageOcrExtractor")).isRight should be(true)
-        markPageAsComplete(pages(1), "pages_test/test", extractors("PdfPageOcrExtractor")).isRight should be(true)
-        markPageAsComplete(pages(2), "pages_test/test", extractors("PdfPageOcrExtractor")).isRight should be(true)
+        val result = markPageAsComplete(pages(0), "pages_test/test", pdfPageOcrExtractor)
+        result.isRight should be(true)
+        markPageAsComplete(pages(1), "pages_test/test", pdfPageOcrExtractor).isRight should be(true)
+        markPageAsComplete(pages(2), "pages_test/test", pdfPageOcrExtractor).isRight should be(true)
         manifest.releaseLocks("test").isRight should be(true)
 
         fetchWork("test", maxBatchSize = 10, maxCost = 30) shouldBe empty

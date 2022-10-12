@@ -394,7 +394,7 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
     Right(())
   }
 
-  def insertPage(tx: StatementRunner, documentBlob: Blob, pageNumber: Long, ingestion: String, languages: List[String], extractors: Iterable[Extractor], bumpPriority: Boolean): Either[Failure, Unit] = {
+  def insertPage(tx: StatementRunner, documentBlob: Blob, pageNumber: Long, pagePdfSize: Long, ingestion: String, languages: List[String], extractors: Iterable[Extractor], bumpPriority: Boolean): Either[Failure, Unit] = {
     def toParameterMap(e: Extractor): java.util.Map[String, Object] = {
       Map[String, Object](
         "name" -> e.name,
@@ -405,7 +405,7 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
         } else {
           e.priority
         }),
-        "cost" -> Long.box(e.cost(CustomMimeTypes.pdfPage, documentBlob.size))
+        "cost" -> Long.box(e.cost(CustomMimeTypes.pdfPage, pagePdfSize))
       ).asJava
     }
 
@@ -428,12 +428,14 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
         |    WHERE
         |      NOT (unprocessedPage)<-[:PROCESSED {
         |        ingestion: {ingestion},
-        |        languages: {languages}
+        |        languages: {languages},
+        |        parentBlobs: []
         |      } ]-(extractor)
         |
         |  MERGE (unprocessedPage)<-[todo:TODO {
         |    ingestion: {ingestion},
-        |    languages: {languages}
+        |    languages: {languages},
+        |    parentBlobs: []
         |  }]-(extractor)
         |    ON CREATE SET todo.cost = cost,
         |                  todo.priority = priority,
@@ -609,7 +611,7 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
 
     val result = tx.run(
       s"""
-        |MATCH (b :Blob:Resource {uri: {uri}})<-[todo:TODO {
+        |MATCH (b :Resource {uri: {uri}})<-[todo:TODO {
         |  ingestion: {ingestion},
         |  parentBlobs: {parentBlobs},
         |  languages: {languages}
@@ -649,7 +651,7 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
   override def logExtractionFailure(blobUri: Uri, extractorName: String, stackTrace: String): Either[Failure, Unit] = transaction { tx =>
     tx.run(
       """
-        |MATCH (b :Blob:Resource {uri: {blobUri}})
+        |MATCH (b :Resource {uri: {blobUri}})
         |MATCH (e: Extractor {name: {extractorName}})
         |CREATE (b)<-[:EXTRACTION_FAILURE {stackTrace: {stackTrace}, at: {atTimeStamp}}]-(e)
       """.stripMargin,
@@ -667,7 +669,7 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
   override def getFailedExtractions: Either[Failure, ExtractionFailures] = transaction { tx =>
     val summary = tx.run(
       s"""
-        |MATCH (b:Blob)<-[f:EXTRACTION_FAILURE]-(e: Extractor)
+        |MATCH (b :Resource)<-[f:EXTRACTION_FAILURE]-(e: Extractor)
         |WITH DISTINCT { extractorName: e.name, stackTrace: f.stackTrace } as key, count(DISTINCT b) as numberOfBlobs
         |RETURN key, numberOfBlobs
         |ORDER BY numberOfBlobs DESC
@@ -833,8 +835,8 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
           insertBlob(tx, file, blobUri, parentBlobs, mimeType, ingestion, languages, extractors, workspace)
         case Manifest.InsertEmail(email, parent) =>
           insertEmail(tx, email, parent)
-        case Manifest.InsertPage(documentBlob, pageNumber, ingestion, languages, extractors, workspace) =>
-          insertPage(tx, documentBlob, pageNumber, ingestion, languages, extractors, bumpPriority = workspace.nonEmpty)
+        case Manifest.InsertPage(documentBlob, pageNumber, pagePdfSize, ingestion, languages, extractors, workspace) =>
+          insertPage(tx, documentBlob, pageNumber, pagePdfSize, ingestion, languages, extractors, bumpPriority = workspace.nonEmpty)
     }.map(_ => ())
   }
 
