@@ -394,15 +394,51 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
     Right(())
   }
 
-  def insertPage(tx: StatementRunner, pageNumber: Long, document: Uri): Either[Failure, Unit] = {
+  def insertPage(tx: StatementRunner, documentBlob: Blob, pageNumber: Long, ingestion: String, languages: List[String], extractors: Iterable[Extractor], bumpPriority: Boolean): Either[Failure, Unit] = {
+    def toParameterMap(e: Extractor): java.util.Map[String, Object] = {
+      Map[String, Object](
+        "name" -> e.name,
+        "indexing" -> Boolean.box(e.indexing),
+        "extractorPriority" -> Int.box(e.priority),
+        "priority" -> Int.box(if (bumpPriority) {
+          e.priority * 100
+        } else {
+          e.priority
+        }),
+        "cost" -> Long.box(e.cost(CustomMimeTypes.pdfPage, documentBlob.size))
+      ).asJava
+    }
+
     tx.run(
       """
         |MERGE (parent :Resource { uri: {parentUri} })<-[:PARENT]-(page :Resource :Page { uri: {pageUri} })
         |
+        |WITH {extractorParamsArray} as extractors
+        |UNWIND extractors as extractorParam
+        |  MERGE (extractor :Extractor {name: extractorParam.name, indexing: extractorParam.indexing, priority: extractorParam.extractorPriority})
+        |    WITH extractor, extractorParam.cost as cost, extractorParam.priority as priority
+        |
+        |  MATCH (unprocessedBlob: Blob:Resource {uri: {blobUri}})
+        |    WHERE
+        |      NOT (unprocessedBlob)<-[:PROCESSED {
+        |        ingestion: {ingestion},
+        |        languages: {languages},
+        |      } ]-(extractor)
+        |
+        |  MERGE (unprocessedBlob)<-[todo:TODO {
+        |    ingestion: {ingestion},
+        |    languages: {languages},
+        |  }]-(extractor)
+        |    ON CREATE SET todo.cost = cost,
+        |                  todo.priority = priority,
+        |                  todo.attempts = 0
       """.stripMargin,
       parameters(
-        "parentUri", document.value,
-        "pageUri", document.chain(pageNumber.toString).value
+        "parentUri", documentBlob.uri.value,
+        "pageUri", documentBlob.uri.chain(pageNumber.toString).value,
+        "extractorParamsArray", extractors.map(toParameterMap).toArray,
+        "ingestion", ingestion,
+        "languages", languages.asJava
       )
     )
 
@@ -768,36 +804,17 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
     }
   }
 
-  override def insert(events: Seq[Manifest.Insertion], rootUri: Uri): Either[Failure, Unit] = transaction { tx =>
-    def insertions() = events.toList.traverse {
+  override def insert(events: Seq[Manifest.Insertion]): Either[Failure, Unit] = transaction { tx =>
+    events.toList.traverse {
         case Manifest.InsertDirectory(parentUri, uri) =>
           insertDirectory(tx, parentUri = parentUri, uri = uri)
         case Manifest.InsertBlob(file, blobUri, parentBlobs, mimeType, ingestion, languages, extractors, workspace) =>
           insertBlob(tx, file, blobUri, parentBlobs, mimeType, ingestion, languages, extractors, workspace)
         case Manifest.InsertEmail(email, parent) =>
           insertEmail(tx, email, parent)
-        case Manifest.InsertPage(pageNumber, parent) =>
-          insertPage(tx, pageNumber, parent)
-    }
-
-    def setEndTimeIfComplete() = {
-      tx.run(
-        """
-          |MATCH (root: Resource {uri: {uri}})
-          |SET root.endTime = {endTime}
-        """.stripMargin,
-        parameters(
-          "uri", rootUri.value,
-          "endTime", Instant.now.toEpochMilli.asInstanceOf[java.lang.Long]
-        )
-      )
-      Right(())
-    }
-
-    for {
-      _ <- insertions()
-      _ <- setEndTimeIfComplete()
-    } yield ()
+        case Manifest.InsertPage(documentBlob, pageNumber, ingestion, languages, extractors, workspace) =>
+          insertPage(tx, documentBlob, pageNumber, ingestion, languages, extractors, bumpPriority = workspace.nonEmpty)
+    }.map(_ => ())
   }
 
   override def rerunSuccessfulExtractorsForBlob(uri: Uri): Attempt[Unit] = attemptTransaction { tx =>

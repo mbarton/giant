@@ -1,14 +1,14 @@
 package services.ingestion
 
 import java.nio.file.{Files, Path}
-
 import cats.syntax.either._
 import extraction.{Extractor, MimeTypeMapper}
 import model.{Language, Uri}
-import model.ingestion.{EmailContext, FileContext, WorkspaceItemContext}
+import model.ingestion.{EmailContext, FileContext, PageContext, WorkspaceItemContext}
 import model.manifest.{Blob, MimeType}
 import services.index.{Index, IngestionData}
 import services.manifest.Manifest
+import services.manifest.Manifest.{InsertBlob, InsertPage}
 import services.{ObjectStorage, Tika, TypeDetector}
 import utils._
 import utils.attempt.AttemptAwait._
@@ -42,6 +42,7 @@ private case class UriJustParent(parent: Uri) extends UriParent
 trait IngestionServices {
   def ingestEmail(context: EmailContext, sourceMimeType: String): Either[Failure, Unit]
   def ingestFile(context: FileContext, blobUri: Uri, path: Path): Either[Failure, Blob]
+  def ingestPage(context: PageContext): Either[Failure, Unit]
   def setProgressNote(blobUri: Uri, extractor: Extractor, note: String): Either[Failure, Unit]
 }
 
@@ -51,15 +52,13 @@ object IngestionServices extends Logging {
 
       val uriParents: List[UriParent] = UriParent.createPairwiseChain(context.parents)
 
-      val rootUri = uriParents.last.parent
-
       val intermediateResources = uriParents
         .collect { case p: UriParentPair => p }
         .map(p => Manifest.InsertDirectory(parentUri = p.parent, uri = p.child))
 
       val insertions = intermediateResources :+ Manifest.InsertEmail(context.email, context.parents.head)
 
-      manifest.insert(insertions, rootUri).flatMap( _ =>
+      manifest.insert(insertions).flatMap( _ =>
         // TODO once we get attempt everywhere we can remove the await
         index.ingestEmail(context.email, context.ingestion, sourceMimeType, context.parentBlobs, context.workspace, context.languages).awaitEither(10.second)
       )
@@ -81,8 +80,6 @@ object IngestionServices extends Logging {
 
       val uriParents: List[UriParent] = UriParent.createPairwiseChain(context.parents)
 
-      val rootUri = uriParents.last.parent
-
       for {
         _ <- upload
         fileSize = Files.size(path)
@@ -91,7 +88,7 @@ object IngestionServices extends Logging {
         mimeType = MimeType(mediaType.toString)
         intermediateResources = uriParents.collect { case p: UriParentPair => p }.map(p => Manifest.InsertDirectory(parentUri = p.parent, uri = p.child))
         insertions = intermediateResources :+ Manifest.InsertBlob(context.file, blobUri, context.parentBlobs, mimeType, context.ingestion, context.languages.map(_.key), extractors, context.workspace)
-        _ <- manifest.insert(insertions, rootUri)
+        _ <- manifest.insert(insertions)
 
         data = IngestionData(
           context.file.creationTime.map(_.toMillis),
@@ -106,6 +103,19 @@ object IngestionServices extends Logging {
         _ <- index.ingestDocument(blobUri, context.file.size, data, context.languages).awaitEither(2.minutes)
       } yield {
         Blob(blobUri, fileSize, Set(mimeType))
+      }
+    }
+
+    override def ingestPage(context: PageContext): Either[Failure, Unit] = {
+      manifest.getBlob(context.documentBlobUri).map { documentBlob =>
+        manifest.insert(Seq(InsertPage(
+          documentBlob,
+          context.pageNumber,
+          context.ingestion,
+          context.languages.map(_.key),
+          mimeTypeMapper.getExtractorsFor(CustomMimeTypes.pdfPage.mimeType),
+          context.workspace
+        )))
       }
     }
 

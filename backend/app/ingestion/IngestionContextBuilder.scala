@@ -2,10 +2,9 @@ package ingestion
 
 import java.nio.file.attribute.FileTime
 import java.nio.file.{Files, LinkOption, Path}
-
 import cats.data.NonEmptyList
 import extraction.ExtractionParams
-import model.ingestion.{EmailContext, FileContext, IngestionFile, WorkspaceItemContext}
+import model.ingestion.{EmailContext, FileContext, IngestionFile, PageContext, WorkspaceItemContext}
 import model.{Email, Language, Uri}
 
 import scala.collection.JavaConverters._
@@ -37,6 +36,14 @@ class IngestionContextBuilder private(val progress: NonEmptyList[Uri], parentBlo
     parentUri = this.progress.head,
     attr = Files.readAttributes(path, "*", LinkOption.NOFOLLOW_LINKS),
     temporary = false)
+  )
+
+  def finishWithPage(pageNumber: Long): PageContext = PageContext(
+    documentBlobUri = this.progress.head,
+    pageNumber,
+    ingestion,
+    languages,
+    workspace
   )
 
   def finish(fileName: String,

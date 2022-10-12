@@ -17,7 +17,8 @@ object Manifest {
   case class InsertBlob(file: IngestionFile, blobUri: Uri, parentBlobs: List[Uri], mimeType: MimeType, ingestion: String,
                         languages: List[String], extractors: Iterable[Extractor], workspace: Option[WorkspaceItemContext]) extends Insertion
   case class InsertEmail(email: Email, parent: Uri) extends Insertion
-  case class InsertPage(pageNumber: Long, document: Uri) extends Insertion
+  case class InsertPage(documentBlob: Blob, pageNumber: Long, ingestion: String, languages: List[String],
+                        extractors: Iterable[Extractor], workspace: Option[WorkspaceItemContext]) extends Insertion
 
   case class WorkCounts(inProgress: Int, outstanding: Int)
 }
@@ -43,7 +44,7 @@ trait Manifest extends WorkerManifest {
 
   def maxExtractionAttempts: Int = 1
 
-  def insert(insertions: Seq[Manifest.Insertion], rootUri: Uri): Either[Failure, Unit]
+  def insert(insertions: Seq[Manifest.Insertion]): Either[Failure, Unit]
 
   def insertCollection(uri: String, display: String, createdBy: String): Attempt[Collection]
 
