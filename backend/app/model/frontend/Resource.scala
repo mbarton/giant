@@ -183,3 +183,16 @@ object DocumentResource {
     )
   }
 }
+
+case class PageResource(
+  uri: String,
+  parents: List[RelatedResource],
+  children: List[RelatedResource],
+  pageNumber: Long,
+  // Pages shouldn't be shown directly in the resource browser so don't need display text
+  display: Option[String] = None,
+  `type`: String = "page",
+  isBasic: Boolean = false,
+  isExpandable: Boolean = false,
+  previewStatus: PreviewStatus = PreviewStatus.PassThrough
+) extends Resource

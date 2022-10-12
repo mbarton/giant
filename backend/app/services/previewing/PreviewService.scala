@@ -163,11 +163,12 @@ object PreviewService {
     previewStatus(mimeTypes) != PreviewStatus.PassThrough
   }
 
-  def getPageStoragePrefix(blobUri: Uri, language: Language): String = {
-    s"pages/${language.key}/${blobUri.toStoragePath}"
+  def getPageStoragePrefix(blobUri: Uri, language: Option[Language]): String = language match {
+    case Some(lang) => s"pages/${lang.key}/${blobUri.toStoragePath}"
+    case None => s"pages/no-language/${blobUri.toStoragePath}"
   }
 
-  def getPageStoragePath(blobUri: Uri, language: Language, pageNumber: Int): String = {
+  def getPageStoragePath(blobUri: Uri, language: Option[Language], pageNumber: Int): String = {
     s"${getPageStoragePrefix(blobUri, language)}/${pageNumber}.pdf"
   }
 

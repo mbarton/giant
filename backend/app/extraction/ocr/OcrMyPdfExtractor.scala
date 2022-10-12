@@ -117,7 +117,7 @@ class OcrMyPdfExtractor(scratch: ScratchSpace, index: Index, pageService: Pages,
       doc.importPage(page)
       doc.save(tempFile.toFile)
 
-      val key = PreviewService.getPageStoragePath(blob.uri, language, pageNumber)
+      val key = PreviewService.getPageStoragePath(blob.uri, Some(language), pageNumber)
       previewStorage.create(key, tempFile, Some("application/pdf"))
     } finally {
       doc.close()

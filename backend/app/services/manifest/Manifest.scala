@@ -17,6 +17,7 @@ object Manifest {
   case class InsertBlob(file: IngestionFile, blobUri: Uri, parentBlobs: List[Uri], mimeType: MimeType, ingestion: String,
                         languages: List[String], extractors: Iterable[Extractor], workspace: Option[WorkspaceItemContext]) extends Insertion
   case class InsertEmail(email: Email, parent: Uri) extends Insertion
+  case class InsertPage(pageNumber: Long, document: Uri) extends Insertion
 
   case class WorkCounts(inProgress: Int, outstanding: Int)
 }

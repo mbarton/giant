@@ -39,8 +39,9 @@ class DeleteResource( manifest: Manifest, index: Index, previewStorage: ObjectSt
        // If there's nothing under them, we just won't find any objects and there will be nothing extra to delete.
        // We can delete this code once we've delete or reprocessed everything under these folders.
        val legacyPagePreviewPrefixes = List("ocr.english", "text").map(folder => s"pages/${folder}/${uri.toStoragePath}")
-       val pagePreviewPrefixes = ocrLanguages.map(PreviewService.getPageStoragePrefix(uri, _))
-       val prefixesToDelete = legacyPagePreviewPrefixes ::: pagePreviewPrefixes
+       val noLangPagePreviewPrefixes = List(PreviewService.getPageStoragePrefix(uri, None))
+       val pagePreviewPrefixes = ocrLanguages.map(lang => PreviewService.getPageStoragePrefix(uri, Some(lang)))
+       val prefixesToDelete = legacyPagePreviewPrefixes ::: noLangPagePreviewPrefixes ::: pagePreviewPrefixes
        logger.info(s"Deleting prefixes: ${prefixesToDelete.mkString(", ")}")
 
        val listOfPagePreviewObjectsAttempts = prefixesToDelete.map { prefix =>

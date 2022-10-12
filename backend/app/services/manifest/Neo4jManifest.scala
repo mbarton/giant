@@ -394,6 +394,21 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
     Right(())
   }
 
+  def insertPage(tx: StatementRunner, pageNumber: Long, document: Uri): Either[Failure, Unit] = {
+    tx.run(
+      """
+        |MERGE (parent :Resource { uri: {parentUri} })<-[:PARENT]-(page :Resource :Page { uri: {pageUri} })
+        |
+      """.stripMargin,
+      parameters(
+        "parentUri", document.value,
+        "pageUri", document.chain(pageNumber.toString).value
+      )
+    )
+
+    Right(())
+  }
+
   override def fetchWork(workerName: String, maxBatchSize: Int, maxCost: Int): Either[Failure, List[WorkItem]] = transaction { tx =>
     val summary = tx.run(
       s"""
@@ -761,6 +776,8 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
           insertBlob(tx, file, blobUri, parentBlobs, mimeType, ingestion, languages, extractors, workspace)
         case Manifest.InsertEmail(email, parent) =>
           insertEmail(tx, email, parent)
+        case Manifest.InsertPage(pageNumber, parent) =>
+          insertPage(tx, pageNumber, parent)
     }
 
     def setEndTimeIfComplete() = {

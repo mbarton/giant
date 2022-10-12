@@ -62,7 +62,7 @@ class PagesController(val controllerComponents: AuthControllerComponents, manife
                                    highlights: Map[Language, List[TextHighlight]],
                                    findHighlights: Map[Language, List[TextHighlight]]) = {
     val previewPaths = (highlights.keySet ++ findHighlights.keySet).map { lang =>
-      lang -> PreviewService.getPageStoragePath(uri, lang, pageNumber)
+      lang -> PreviewService.getPageStoragePath(uri, Some(lang), pageNumber)
     }
 
     Attempt.sequence(previewPaths.map { case (lang, path) =>
