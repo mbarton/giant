@@ -144,7 +144,8 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
         "ArchiveExtractor" -> 5,
         "RarExtractor" -> 5,
         "DocumentBodyExtractor" -> 4,
-        "PdfOcrExtractor" -> 1
+        "PdfOcrExtractor" -> 1,
+        "PdfPageOcrExtractor" -> 1
       ).map { case(name, priority) => name -> extractor(name, priority) }
 
       def blob(uri: Uri, extractors: List[Extractor], ingestion: String, size: Long = 1024L, workspace: Option[String] = None) = {
@@ -199,6 +200,8 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
 
       // TODO MRB: these tests should all return empty from fetchWork and release locks
       //  At the moment some of them do and some of them only return empty, essentially relying on the locks stacking up
+      //  The URIs are also incorrect as they pin the blobs underneath the collection. As it stands, blobs are their
+      //  own top level node with a parent :Resource under an ingestion representing the file they came from.
 
       "Can retrieve work by extractor priority" in {
         val blobs = buildBlobs("priority_test", "priority_test/test")
@@ -402,13 +405,12 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
       }
 
       "Can get work for pages" in {
-        val pdfPageOcrExtractor = extractor("PdfPageOcrExtractor", 1, identity)
         val documentUri = Uri(s"pages_test/test.pdf")
 
         val pages = List(
-          page(documentUri, 1, List(pdfPageOcrExtractor), ingestion = "pages_test/test"),
-          page(documentUri, 2, List(pdfPageOcrExtractor), ingestion = "pages_test/test"),
-          page(documentUri, 3, List(pdfPageOcrExtractor), ingestion = "pages_test/test")
+          page(documentUri, 1, List(extractors("PdfPageOcrExtractor")), ingestion = "pages_test/test"),
+          page(documentUri, 2, List(extractors("PdfPageOcrExtractor")), ingestion = "pages_test/test"),
+          page(documentUri, 3, List(extractors("PdfPageOcrExtractor")), ingestion = "pages_test/test")
         )
 
         manifest.insertCollection("pages_test", "pages_test", "test").eitherValue.isRight should be(true)
@@ -424,15 +426,43 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
           documentUri.chain("3") -> "PdfPageOcrExtractor"
         )
 
-        markPageAsComplete(pages(0), "pages_test/test", pdfPageOcrExtractor).isRight should be(true)
-        markPageAsComplete(pages(1), "pages_test/test", pdfPageOcrExtractor).isRight should be(true)
-        markPageAsComplete(pages(2), "pages_test/test", pdfPageOcrExtractor).isRight should be(true)
+        markPageAsComplete(pages(0), "pages_test/test", extractors("PdfPageOcrExtractor")).isRight should be(true)
+        markPageAsComplete(pages(1), "pages_test/test", extractors("PdfPageOcrExtractor")).isRight should be(true)
+        markPageAsComplete(pages(2), "pages_test/test", extractors("PdfPageOcrExtractor")).isRight should be(true)
 
         fetchWork("test", maxBatchSize = 10, maxCost = 30) shouldBe empty
       }
 
       "Can get a mixture of work for blobs and pages" in {
-        ???
+        val documentUri = Uri(s"blobs_and_pages/test.pdf")
+
+        val blobs = List(
+          blob(Uri("blobs_and_pages/test/test.zip"), List(extractors("ArchiveExtractor")), ingestion = "blobs_and_pages/test"),
+          blob(documentUri, List.empty, ingestion = "pages_test/test")
+        )
+
+        val pages = List(
+          page(documentUri, 1, List(extractors("PdfPageOcrExtractor")), ingestion = "pages_test/test"),
+          page(documentUri, 2, List(extractors("PdfPageOcrExtractor")), ingestion = "pages_test/test"),
+          page(documentUri, 3, List(extractors("PdfPageOcrExtractor")), ingestion = "pages_test/test")
+        )
+
+        manifest.insertCollection("blobs_and_pages", "blobs_and_pages", "test").eitherValue.isRight should be(true)
+        manifest.insertIngestion(Uri("blobs_and_pages"), Uri("blobs_and_pages/test"), "test", None, List(English), fixed = false, default = false).eitherValue.isRight should be(true)
+
+        val wut = manifest.insert(blobs)
+          wut.isRight should be(true)
+
+        manifest.insert(pages).isRight should be(true)
+
+        fetchWork("test", maxBatchSize = 10, maxCost = 2048) should contain only(
+          blobs(0).blobUri -> "ArchiveExtractor",
+          documentUri.chain("1") -> "PdfPageOcrExtractor",
+          documentUri.chain("2") -> "PdfPageOcrExtractor",
+          documentUri.chain("3") -> "PdfPageOcrExtractor"
+        )
+
+        fetchWork("test", maxBatchSize = 10, maxCost = 2048) shouldBe empty
       }
 
       "Can skip work that has already been attempted" in {
