@@ -9,6 +9,7 @@ import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.text.PDFTextStripper
 import services.{ObjectStorage, ScratchSpace}
 import services.index.{Index, Pages}
+import services.previewing.PreviewService
 import services.ingestion.IngestionServices
 import utils.{CustomMimeTypes, Logging, Ocr, OcrStderrLogger}
 
@@ -18,7 +19,7 @@ import scala.concurrent.ExecutionContext
 
 import utils.attempt.AttemptAwait._
 
-class OcrMyPdfPageExtractor(scratch: ScratchSpace, index: Index, pageService: Pages, previewStorage: ObjectStorage,
+class OcrMyPdfPageExtractor(scratch: ScratchSpace, pageService: Pages, previewStorage: ObjectStorage,
                         ingestionServices: IngestionServices)(implicit ec: ExecutionContext) extends BaseOcrExtractor(scratch) with Logging {
 
   val mimeTypes = Set(
@@ -55,7 +56,7 @@ class OcrMyPdfPageExtractor(scratch: ScratchSpace, index: Index, pageService: Pa
       }.toMap
 
       // All docs have a single page with the same dimensions, just different text from the OCR run per language
-      val (_, (_, firstDoc)) = pdDocuments.head
+      val (firstLang, (firstPath, firstDoc)) = pdDocuments.head
 
       val page = firstDoc.getPage(0)
       val pageBoundingBox = page.getMediaBox
@@ -86,6 +87,16 @@ class OcrMyPdfPageExtractor(scratch: ScratchSpace, index: Index, pageService: Pa
       val esPage = Page(pageUri.pageNumber, textByLanguage, dimensions)
 
       pageService.addPageContents(pageUri.documentBlobUri, Seq(esPage)).await()
+
+      // TODO MRB: Blocker! How are we going to write the full document text to the index?
+      //           A la OcrMyPdfExtractor.insertFullText (addDocumentOcr)
+      //           Could use scripted updates but tbh wouldn't it be better to search the page index
+      //           so you can go straight to the page without the "find first highlight" hack
+
+      val previewKey = PreviewService.getPageStoragePath(pageUri.documentBlobUri, Some(firstLang), pageUri.pageNumber.toInt)
+
+      // TODO MRB: what to do with the pdfs with other languages? (the existing extractors didn't handle this anyway)
+      previewStorage.create(previewKey, firstPath, Some("application/pdf"))
     } finally {
       pdDocuments.foreach { case (_, (path, doc)) =>
         doc.close()

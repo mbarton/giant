@@ -66,6 +66,7 @@ case class AuthConfig(
 object OcrEngine extends Enumeration {
   val Tesseract = Value("Tesseract")
   val OcrMyPdf = Value("OCRmyPDF")
+  val OcrMyPdfPages = Value("OCRmyPDFPages")
 }
 
 case class TesseractOcrConfig(
