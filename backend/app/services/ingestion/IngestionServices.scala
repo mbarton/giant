@@ -3,7 +3,7 @@ package services.ingestion
 import java.nio.file.{Files, Path}
 import cats.syntax.either._
 import extraction.{Extractor, MimeTypeMapper}
-import model.{Language, Uri}
+import model.{Language, PageUri, Uri}
 import model.ingestion.{EmailContext, FileContext, PageContext, WorkspaceItemContext}
 import model.manifest.{Blob, MimeType}
 import services.index.{Index, IngestionData}
@@ -109,8 +109,7 @@ object IngestionServices extends Logging {
     override def ingestPage(context: PageContext, pagePdfSize: Long): Either[Failure, Unit] = {
       manifest.getBlob(context.documentBlobUri).map { documentBlob =>
         manifest.insert(Seq(InsertPage(
-          documentBlob,
-          context.pageNumber,
+          PageUri(documentBlob.uri, context.pageNumber),
           pagePdfSize,
           context.ingestion,
           context.languages.map(_.key),

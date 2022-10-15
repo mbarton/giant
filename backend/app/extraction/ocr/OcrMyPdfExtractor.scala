@@ -12,7 +12,7 @@ import services.index.{Index, Pages}
 import services.ingestion.IngestionServices
 import services.previewing.PreviewService
 import utils.attempt.AttemptAwait._
-import utils.{Logging, Ocr, OcrStderrLogger}
+import utils.{CustomMimeTypes, Logging, Ocr, OcrStderrLogger}
 
 import java.io.File
 import java.nio.file.{Files, Path}

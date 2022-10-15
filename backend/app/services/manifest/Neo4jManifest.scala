@@ -394,7 +394,7 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
     Right(())
   }
 
-  def insertPage(tx: StatementRunner, documentBlob: Blob, pageNumber: Long, pagePdfSize: Long, ingestion: String, languages: List[String], extractors: Iterable[Extractor], bumpPriority: Boolean): Either[Failure, Unit] = {
+  def insertPage(tx: StatementRunner, uri: PageUri, pagePdfSize: Long, ingestion: String, languages: List[String], extractors: Iterable[Extractor], bumpPriority: Boolean): Either[Failure, Unit] = {
     def toParameterMap(e: Extractor): java.util.Map[String, Object] = {
       Map[String, Object](
         "name" -> e.name,
@@ -442,9 +442,9 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
         |                  todo.attempts = 0
       """.stripMargin,
       parameters(
-        "parentUri", documentBlob.uri.value,
-        "pageUri", documentBlob.uri.chain(pageNumber.toString).value,
-        "pageNumber", Long.box(pageNumber),
+        "parentUri", uri.documentBlobUri.value,
+        "pageUri", uri.toUri.value,
+        "pageNumber", Long.box(uri.pageNumber),
         "extractorParamsArray", extractors.map(toParameterMap).toArray,
         "ingestion", ingestion,
         "languages", languages.asJava
@@ -835,8 +835,8 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
           insertBlob(tx, file, blobUri, parentBlobs, mimeType, ingestion, languages, extractors, workspace)
         case Manifest.InsertEmail(email, parent) =>
           insertEmail(tx, email, parent)
-        case Manifest.InsertPage(documentBlob, pageNumber, pagePdfSize, ingestion, languages, extractors, workspace) =>
-          insertPage(tx, documentBlob, pageNumber, pagePdfSize, ingestion, languages, extractors, bumpPriority = workspace.nonEmpty)
+        case Manifest.InsertPage(uri, pagePdfSize, ingestion, languages, extractors, workspace) =>
+          insertPage(tx, uri, pagePdfSize, ingestion, languages, extractors, bumpPriority = workspace.nonEmpty)
     }.map(_ => ())
   }
 

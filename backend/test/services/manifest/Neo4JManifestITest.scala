@@ -11,7 +11,7 @@ import extraction.{ExtractionParams, Extractor, MimeTypeMapper}
 import model.frontend.email.{EmailNeighbours, Neighbour, Email => FrontendEmail}
 import model.ingestion.{IngestionFile, WorkspaceItemContext}
 import model.manifest.{Blob, MimeType, WorkItem}
-import model.{Email, English, Recipient, Uri}
+import model.{Email, English, PageUri, Recipient, Uri}
 import org.scalamock.scalatest.MockFactory
 import services.events.Events
 import services.{FingerprintServices, ObjectStorage, Tika}
@@ -168,8 +168,7 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
 
       def page(documentUri: Uri, pageNumber: Long, extractors: List[Extractor], ingestion: String, blobSize: Long = 1024L, pageSize: Long = 8L) = {
         Manifest.InsertPage(
-          Blob(documentUri, blobSize, Set(CustomMimeTypes.pdfPage)),
-          pageNumber,
+          PageUri(documentUri, pageNumber),
           pageSize,
           ingestion,
           List(English.key),
@@ -195,7 +194,7 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
       }
 
       def markPageAsComplete(page: Manifest.InsertPage, ingestion: String, extractor: Extractor) = {
-        manifest.markAsComplete(ExtractionParams(ingestion, List(English), List.empty, None), Blob(page.documentBlob.uri.chain(page.pageNumber.toString), 0, Set.empty), extractor)
+        manifest.markAsComplete(ExtractionParams(ingestion, List(English), List.empty, None), Blob(page.uri.toUri, 0, Set.empty), extractor)
       }
 
       // TODO MRB: these tests should all return empty from fetchWork and release locks
@@ -421,9 +420,9 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
         manifest.insert(pages).isRight should be(true)
 
         fetchWork("test", maxBatchSize = 10, maxCost = 30) should contain only(
-          documentUri.chain("1") -> "PdfPageOcrExtractor",
-          documentUri.chain("2") -> "PdfPageOcrExtractor",
-          documentUri.chain("3") -> "PdfPageOcrExtractor"
+          documentUri.chain("page-1") -> "PdfPageOcrExtractor",
+          documentUri.chain("page-2") -> "PdfPageOcrExtractor",
+          documentUri.chain("page-3") -> "PdfPageOcrExtractor"
         )
 
         markPageAsComplete(pages(0), "pages_test/test", extractors("PdfPageOcrExtractor")).isRight should be(true)
@@ -457,9 +456,9 @@ class Neo4JManifestITest extends AnyFreeSpec with Matchers with Neo4jTestService
 
         fetchWork("test", maxBatchSize = 10, maxCost = 2048) should contain only(
           blobs(0).blobUri -> "ArchiveExtractor",
-          documentUri.chain("1") -> "PdfPageOcrExtractor",
-          documentUri.chain("2") -> "PdfPageOcrExtractor",
-          documentUri.chain("3") -> "PdfPageOcrExtractor"
+          documentUri.chain("page-1") -> "PdfPageOcrExtractor",
+          documentUri.chain("page-2") -> "PdfPageOcrExtractor",
+          documentUri.chain("page-3") -> "PdfPageOcrExtractor"
         )
 
         fetchWork("test", maxBatchSize = 10, maxCost = 2048) shouldBe empty

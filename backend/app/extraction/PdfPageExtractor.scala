@@ -1,6 +1,6 @@
 package extraction
 import ingestion.IngestionContextBuilder
-import model.Uri
+import model.{PageUri, Uri}
 import model.manifest.Blob
 import org.apache.pdfbox.pdmodel.{PDDocument, PDPage}
 import org.apache.pdfbox.rendering.PDFRenderer
@@ -12,7 +12,7 @@ import utils.attempt.Failure
 import java.io.File
 import java.nio.file.Files
 
-class PdfPageExtractor(scratch: ScratchSpace, previewStorage: ObjectStorage, ingestionServices: IngestionServices) extends FileExtractor(scratch) {
+class PdfPageExtractor(scratch: ScratchSpace, objectStorage: ObjectStorage, ingestionServices: IngestionServices) extends FileExtractor(scratch) {
   val mimeTypes = Set(
     "application/pdf"
   )
@@ -34,7 +34,7 @@ class PdfPageExtractor(scratch: ScratchSpace, previewStorage: ObjectStorage, ing
 
       for(pageNumber <- 1 until totalPages) {
         val page = document.getPage(pageNumber - 1)
-        val pagePdfSize = uploadPageAsSeparatePdf(blob, pageNumber, page, previewStorage)
+        val pagePdfSize = uploadPageAsSeparatePdf(blob, pageNumber, page, objectStorage)
 
         ingestionServices.ingestPage(builder.finishWithPage(pageNumber), pagePdfSize)
       }
@@ -46,7 +46,7 @@ class PdfPageExtractor(scratch: ScratchSpace, previewStorage: ObjectStorage, ing
     }
   }
 
-  private def uploadPageAsSeparatePdf(blob: Blob, pageNumber: Int, page: PDPage, previewStorage: ObjectStorage): Long = {
+  private def uploadPageAsSeparatePdf(blob: Blob, pageNumber: Int, page: PDPage, objectStorage: ObjectStorage): Long = {
     val doc = new PDDocument()
     val tempFile = Files.createTempFile(s"${blob.uri}-${pageNumber}", ".pdf")
 
@@ -54,8 +54,8 @@ class PdfPageExtractor(scratch: ScratchSpace, previewStorage: ObjectStorage, ing
       doc.importPage(page)
       doc.save(tempFile.toFile)
 
-      val key = PreviewService.getPageStoragePath(blob.uri, language = None, pageNumber)
-      previewStorage.create(key, tempFile, Some("application/pdf"))
+      val key = PageUri(blob.uri, pageNumber).toUri.value
+      objectStorage.create(key, tempFile, Some("application/pdf"))
 
       Files.size(tempFile)
     } finally {
