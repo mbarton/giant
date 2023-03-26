@@ -22,7 +22,7 @@ import utils.Logging
 import utils.attempt._
 import utils.auth.totp.{Algorithm, SecureSecretGenerator}
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import java.util.Base64
 
 object WebAuthn extends Logging {

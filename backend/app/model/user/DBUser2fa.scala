@@ -4,7 +4,7 @@ import model._
 import org.neo4j.driver.v1.Value
 import utils.auth.totp._
 import utils.auth.webauthn.WebAuthn
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 // Originally we just had totpSecret as a field on DBUser but we need a lot more state to handle webauthn
 // It's cleaner to store that all separately and allows us to "repair" write in the additional fields for existing users

@@ -29,7 +29,7 @@ import org.scalatest.matchers.should.Matchers
 
 class AuthActionBuilderTest extends AnyFreeSpec with Matchers with BaseOneAppPerSuite with FakeApplicationFactory
   with EitherValues with Results with Inside {
-  
+
   import TestUserManagement._
 
   override def fakeApplication(): Application = {
