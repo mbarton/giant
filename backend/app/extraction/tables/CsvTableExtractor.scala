@@ -12,7 +12,7 @@ import services.table.Tables
 import utils.attempt.{Attempt, Failure}
 import utils.attempt.AttemptAwait._
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.concurrent.ExecutionContext
 
 class CsvTableExtractor(scratch: ScratchSpace, tableOps: Tables)(implicit ec: ExecutionContext) extends FileExtractor(scratch) {
@@ -26,7 +26,7 @@ class CsvTableExtractor(scratch: ScratchSpace, tableOps: Tables)(implicit ec: Ex
 
   override def priority: Int = 5
 
-  private val format = CSVFormat.RFC4180.withHeader()
+  private val format = CSVFormat.RFC4180.builder().setHeader().build()
 
   override def extract(blob: Blob, file: File, params: ExtractionParams): Either[Failure, Unit] = {
     // TODO assume charset?? BAD???

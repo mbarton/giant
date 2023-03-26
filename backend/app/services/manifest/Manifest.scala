@@ -80,9 +80,9 @@ trait Manifest extends WorkerManifest {
 
   def getEmailThread(uri: String): Attempt[List[EmailNeighbours]]
 
-  def deleteBlob(uri: Uri): Attempt[Unit]
-  def deleteBlobFileParent(uri: Uri): Attempt[Unit]
-  def deleteBlobWorkspaceNode(uri: Uri): Attempt[Unit]
+  def getLanguagesProcessedByOcrMyPdf(uri: Uri): Attempt[List[Language]]
 
-  def deleteIngestion(uri: Uri): Attempt[Unit]
+  def deleteBlob(uri: Uri): Attempt[Unit]
+
+  def deleteResourceAndDescendants(uri: Uri): Attempt[Unit]
 }

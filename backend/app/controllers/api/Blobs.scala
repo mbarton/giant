@@ -8,35 +8,49 @@ import play.api.mvc.{Action, AnyContent, Request, Result}
 import services.ObjectStorage
 import services.index.Index
 import services.manifest.Manifest
+import services.previewing.PreviewService
 import utils.Logging
 import utils.attempt.{Attempt, DeleteFailure}
 import utils.controller.{AuthApiController, AuthControllerComponents, FailureToResultMapper}
 
 
 class Blobs(override val controllerComponents: AuthControllerComponents, manifest: Manifest, index: Index,
-            objectStorage: ObjectStorage, previewStorage: ObjectStorage)
+            objectStorage: ObjectStorage, previewStorage: ObjectStorage, previewService: PreviewService)
   extends AuthApiController with Logging {
 
   def param(name: String, req: Request[AnyContent]): Option[String] = req.queryString.get(name).flatMap(_.headOption)
 
-  def getBlobs = ApiAction.attempt { req =>
+  // inMultiple means only return blobs that are also in other collections/ingestions than those supplied.
+  // For instance:
+  //   ?collection=c&inMultiple=true
+  //   returns blobs in collection c and at least one other collection
+  //
+  //   ?collection=c&ingestion=i&inMultiple=true
+  //   returns blobs in ingestion c/i and at least one other ingestion
+  def getBlobs(collection: Option[String], ingestion: Option[String], inMultiple: Option[Boolean], size: Option[Int]) = ApiAction.attempt { req =>
     checkPermission(CanPerformAdminOperations, req) {
-      (param("collection", req), param("ingestion", req)) match {
-        case (Some(collection), Some(ingestion)) =>
-          val uri = Uri(collection).chain(ingestion)
-          val size = param("size", req).map(_.toInt).getOrElse(500)
-
-          for {
-            _ <- manifest.getIngestion(uri)
-            blobs <- index.getBlobs(collection, ingestion, size)
-          } yield {
-            Ok(Json.obj(
-              "blobs" -> blobs
-            ))
-          }
+      (collection, ingestion, inMultiple) match {
+        case (Some(collection), maybeIngestion, maybeInMultiple) =>
+          index.getBlobs(collection, maybeIngestion, size.getOrElse(500), maybeInMultiple.getOrElse(false)).map(blobs =>
+            Ok(Json.obj("blobs" -> blobs))
+          )
 
         case _ =>
-          Attempt.Right(BadRequest("Missing collection or ingestion query parameter"))
+          Attempt.Right(BadRequest("Missing collection query parameter"))
+      }
+    }
+  }
+
+  def countBlobs(collection: Option[String], ingestion: Option[String], inMultiple: Option[Boolean]) = ApiAction.attempt { req =>
+    checkPermission(CanPerformAdminOperations, req) {
+      (collection, ingestion, inMultiple) match {
+        case (Some(collection), maybeIngestion, maybeInMultiple) =>
+          index.countBlobs(collection, maybeIngestion, maybeInMultiple.getOrElse(false)).map(count =>
+            Ok(Json.obj("count" -> count))
+          )
+
+        case _ =>
+          Attempt.Right(BadRequest("Missing collection query parameter"))
       }
     }
   }
@@ -73,12 +87,12 @@ class Blobs(override val controllerComponents: AuthControllerComponents, manifes
   }
 
 
-  def delete(id: String, deleteFolders: Boolean, checkChildren: Boolean): Action[AnyContent] = ApiAction.attempt { req =>
+  def delete(id: String, checkChildren: Boolean): Action[AnyContent] = ApiAction.attempt { req =>
     import scala.language.existentials
     val deleteResource = new DeleteResource(manifest, index, previewStorage, objectStorage)
     checkPermission(CanPerformAdminOperations, req) {
-      val result = if (checkChildren) deleteResource.deleteBlobCheckChildren(id, deleteFolders)
-      else deleteResource.deleteBlob(id, deleteFolders)
+      val result = if (checkChildren) deleteResource.deleteBlobCheckChildren(id)
+      else deleteResource.deleteBlob(id)
       result.map(_ => NoContent)
     }
   }

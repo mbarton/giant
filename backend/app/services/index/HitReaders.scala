@@ -33,7 +33,7 @@ object HitReaders {
     def optLongField(name: String): Option[Long] = if(fields.contains(name)) { Some(longField(name)) } else { None }
     def listField[T](name: String): List[T] = optField[List[T]](name).getOrElse(Nil)
     def setField[T](name: String): Set[T] = optField[List[T]](name).map(_.toSet).getOrElse(Set.empty)
-    def optEnumField[T <: EnumEntry](name: String, enum: PlayEnum[T]): Option[T] = optField(name).flatMap(enum.withNameOption)
+    def optEnumField[T <: EnumEntry](name: String, playEnum: PlayEnum[T]): Option[T] = optField(name).flatMap(playEnum.withNameOption)
     def objectField(name: String): FieldMap = field[FieldMap](name)
     def nestedField(name: String): Map[String, Seq[String]] = {
       val base = Map.empty[String, Seq[String]]
@@ -146,7 +146,8 @@ object HitReaders {
   implicit object IndexedBlobHitReader extends HitReader[IndexedBlob] {
     override def read(hit: Hit): Try[IndexedBlob] = try {
       val ingestion = hit.setField[String](IndexFields.ingestion)
-      Success(IndexedBlob(hit.id, ingestion))
+      val collection = hit.setField[String](IndexFields.collection)
+      Success(IndexedBlob(uri = hit.id, collections = collection, ingestions = ingestion))
     } catch {
       case NonFatal(e) => Failure(e)
     }
@@ -252,7 +253,7 @@ object HitReaders {
 
   private def readOcr(fields: FieldMap): Option[Map[String, String]] = {
     fields.optField[FieldMap](ocr).map { languages =>
-      languages.mapValues(_.asInstanceOf[String])
+      languages.view.mapValues(_.asInstanceOf[String]).toMap
     }
   }
 

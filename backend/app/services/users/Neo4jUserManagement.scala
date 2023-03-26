@@ -15,7 +15,7 @@ import services.manifest.Manifest
 import utils._
 import utils.attempt.{Attempt, ClientFailure, Failure, IllegalStateFailure, Neo4JFailure, NotFoundFailure, UnknownFailure, UserDoesNotExistFailure}
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.concurrent.ExecutionContext
 import scala.util.control.NonFatal
 

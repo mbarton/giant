@@ -3,6 +3,7 @@ package services.index
 import com.sksamuel.elastic4s.ElasticClient
 import com.sksamuel.elastic4s.ElasticDsl._
 import com.sksamuel.elastic4s.requests.common.FetchSourceContext
+import com.sksamuel.elastic4s.requests.searches.queries.BoolQuery
 import com.sksamuel.elastic4s.requests.searches.{DateHistogramInterval, HighlightField}
 import com.sksamuel.elastic4s.requests.update.UpdateByQueryRequest
 import extraction.EnrichedMetadata
@@ -10,14 +11,14 @@ import model.frontend._
 import model.frontend.email.EmailMetadata
 import model.index._
 import model.ingestion.WorkspaceItemContext
-import model.{Email, ExtractedDateTime, Language, Recipient, Uri, Languages, Arabic}
+import model.{Arabic, Email, ExtractedDateTime, Language, Languages, Recipient, Uri}
 import services.ElasticsearchSyntax
 import services.ElasticsearchSyntax.NestedField
 import services.index.HitReaders._
 import utils._
 import utils.attempt._
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.concurrent.ExecutionContext
 
 class ElasticsearchResources(override val client: ElasticClient, indexName: String)(implicit executionContext: ExecutionContext) extends Index with Logging with ElasticsearchSyntax {
@@ -442,16 +443,40 @@ class ElasticsearchResources(override val client: ElasticClient, indexName: Stri
 
   }
 
-  def getBlobs(collection: String, ingestion: String, size: Int): Attempt[Iterable[IndexedBlob]] = {
+  private def getBlobQuery(collection: String, maybeIngestion: Option[String], inMultiple: Boolean): BoolQuery = {
+    val matchCollectionIngestionQuery = maybeIngestion match {
+      case Some(ingestion) => matchQuery(IndexFields.ingestionRaw, s"$collection/$ingestion")
+      case _ => matchQuery(IndexFields.collectionRaw, collection)
+    }
+
+    val mustQuery = must(matchCollectionIngestionQuery)
+    val field = maybeIngestion.map(_ => "ingestion").getOrElse("collection")
+    if (inMultiple)
+      mustQuery.filter(scriptQuery(script(s"doc['${field}.keyword'].length > 1")))
+    else
+      mustQuery
+  }
+
+  def getBlobs(collection: String, maybeIngestion: Option[String], size: Int, inMultiple: Boolean): Attempt[Iterable[IndexedBlob]] = {
     execute {
       search(indexName)
-        .sourceInclude(IndexFields.ingestion)
+        .sourceInclude(IndexFields.ingestion, IndexFields.collection)
         .size(size)
         .bool(
-          must(matchQuery(IndexFields.ingestionRaw, s"$collection/$ingestion"))
+          getBlobQuery(collection, maybeIngestion, inMultiple)
         )
     }.map { response =>
       response.to[IndexedBlob]
+    }
+  }
+
+  def countBlobs(collection: String, maybeIngestion: Option[String], inMultiple: Boolean): Attempt[Long] = {
+    execute {
+      count(indexName).query(
+        getBlobQuery(collection, maybeIngestion, inMultiple)
+      )
+    }.map { response =>
+      response.count
     }
   }
 

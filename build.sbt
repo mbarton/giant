@@ -2,7 +2,7 @@ name := "giant"
 description := "Tool for journalists to search, analyse and categorise unstructured data, often during an investigation"
 version := "0.1.0"
 
-scalaVersion in ThisBuild := "2.12.15"
+ThisBuild / scalaVersion := "2.13.9"
 
 import com.gu.riffraff.artifact.BuildInfo
 import play.sbt.PlayImport.PlayKeys._
@@ -12,12 +12,12 @@ val compilerFlags = Seq(
   "-unchecked",
   "-deprecation",
   "-feature",
-  "-Xfatal-warnings",
-  "-Ypartial-unification"
+  "-Xfatal-warnings"
 )
 
-val awsVersion = "1.11.566"
-val log4jVersion = "2.17.0"
+val awsVersion = "1.12.428"
+val log4jVersion = "2.20.0"
+val slf4jVersion = "2.0.7"
 // To match what the main app gets from scalatestplus-play transitively
 val scalatestVersion = "3.1.1"
 
@@ -80,15 +80,18 @@ lazy val root = (project in file("."))
 lazy val common = (project in file("common"))
   .settings(
     name := "common",
+    scalacOptions := compilerFlags,
     libraryDependencies ++= Seq(
       "org.typelevel" %% "cats-core" % "2.2.0",
-      "com.typesafe.play" %% "play-json" % "2.9.0",
-      // This version has been chosen the match the transitive dependency from Play.
-      // Do not upgrade! Unless maybe you're upgrading Play...
-      "com.google.guava" % "guava" % "28.2-jre",
+      "com.typesafe.play" %% "play-json" % "2.9.4",
       "com.amazonaws" % "aws-java-sdk-s3" % awsVersion,
-      "org.slf4j" % "slf4j-api" % "1.7.25",
-      "org.scalatest" %% "scalatest" % scalatestVersion
+      "org.scalatest" %% "scalatest" % scalatestVersion,
+      // Play has a transitive dependency on Logback,
+      // but we specify one here to ensure that Play uses compatible
+      // versions of SLF4J and Logback (i.e. its versions should be evicted by those here).
+      // https://github.com/playframework/playframework/issues/11499#issuecomment-1285654119
+      "org.slf4j" % "slf4j-api" % slf4jVersion,
+      "ch.qos.logback" % "logback-classic" % "1.4.6",
     )
   )
 
@@ -106,34 +109,42 @@ lazy val backend = (project in file("backend"))
     libraryDependencies ++= Seq(
       ws,
       "commons-codec" % "commons-codec" % "1.11",
-      "org.bouncycastle" % "bcprov-jdk15on" % "1.60",
+      "org.bouncycastle" % "bcprov-jdk15on" % "1.70",
+      // required by tikka, used to be part of bcprov-jdk15on, pulled out into a separate library from 1.69 onwards
+      // see https://github.com/guardian/giant/pull/92 for details - may be removable if it gets added as an explicit
+      // dependency to tikka or another library
+      "org.bouncycastle" % "bcutil-jdk15on" % "1.70",
       "commons-io" % "commons-io" % "2.6",
       "com.sksamuel.elastic4s" %% "elastic4s-client-esjava" % "7.9.1",
       "org.elasticsearch.client" % "elasticsearch-rest-client-sniffer" % "7.9.2",
-      "com.typesafe.akka" %% "akka-cluster-typed" % "2.6.5", // should match what we get transitively from Play
+      "com.typesafe.akka" %% "akka-cluster-typed" % "2.6.20", // should match what we get transitively from Play
       "org.neo4j.driver" % "neo4j-java-driver" % "1.6.3",
-      "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.1",
       "com.pff" % "java-libpst" % "0.9.3",
       // NOTE: When you update tika you need to check if there are any updates required to be made to the
       // conf/org/apache/tika/mimecustom-mimetypes.xml file
-      "org.apache.tika" % "tika-parsers" % "1.22" exclude("javax.ws.rs", "javax.ws.rs-api"),
-      // Daft workaround due to https://github.com/sbt/sbt/issues/3618#issuecomment-454528463
-      "jakarta.ws.rs" % "jakarta.ws.rs-api" % "2.1.5",
+      // (Seems to be OK as of 2.7.0: https://tika.apache.org/2.7.0/parser_guide.html)
+      "org.apache.tika" % "tika-parsers-standard-package" % "2.7.0",
+      "org.apache.tika" % "tika-core" % "2.7.0",
       "org.apache.logging.log4j" % "log4j-to-slf4j" % log4jVersion,
       "org.apache.logging.log4j" % "log4j-api" % log4jVersion,
       "org.apache.logging.log4j" % "log4j-core" % log4jVersion,
       "net.logstash.logback" % "logstash-logback-encoder" % "6.3",
-      "com.pauldijou" %% "jwt-play" % "4.3.0",
+      "com.pauldijou" %% "jwt-play" % "5.0.0",
       "com.amazonaws" % "aws-java-sdk-ec2" % awsVersion,
       "com.amazonaws" % "aws-java-sdk-ssm" % awsVersion,
       "com.amazonaws" % "aws-java-sdk-autoscaling" % awsVersion,
       "com.amazonaws" % "aws-java-sdk-cloudwatch" % awsVersion,
       "com.amazonaws" % "aws-java-sdk-cloudwatchmetrics" % awsVersion,
-      "com.beachape" %% "enumeratum-play" % "1.6.1",
-      "com.iheart" %% "ficus" % "1.4.4",
+      "com.beachape" %% "enumeratum-play" % "1.7.2",
+      "com.iheart" %% "ficus" % "1.5.2",
       "com.sun.mail" % "javax.mail" % "1.6.2",
-      "org.jsoup" % "jsoup" % "1.11.3",
-      "com.gu" %% "pan-domain-auth-verification" % "0.8.0",
+      "org.jsoup" % "jsoup" % "1.14.2",
+      "com.gu" %% "pan-domain-auth-verification" % "1.2.0",
+
+      // this is needed to override the 2.11.4 version of jackson-module used in various play libraries (including jwt-play)
+      // as 2.11.4 is only compatible with versions of jackson databind up to 2.12.0 - and we're using 2.12.7 (Phil thinks
+      // because of the version of tikka-parsers we're using)
+      "com.fasterxml.jackson.module" % "jackson-module-scala_2.13" % "2.14.2",
 
       // webauthn4j and play dependency issue number
       //  webauthn4j depends on Jackson 2.13. Play (via Akka) depends on Jackson 2.11
@@ -162,15 +173,15 @@ lazy val backend = (project in file("backend"))
       "com.github.jai-imageio" % "jai-imageio-jpeg2000" % "1.3.0",
       // Subject to the mad unRAR restriction so again should be reviewed before any open sourcing
       // The latest code is here: https://github.com/junrar/junrar (not in the older repository that appears first in Google)
-      "com.github.junrar" % "junrar" % "3.0.0",
+      "com.github.junrar" % "junrar" % "7.4.1",
 
       // Test dependencies
 
       "org.scalacheck" %% "scalacheck" % "1.14.0" % Test,
       "org.scalatestplus.play" %% "scalatestplus-play" % "5.1.0" % Test,
-      "com.whisk" %% "docker-testkit-scalatest" % "0.9.8" % Test,
-      "com.whisk" %% "docker-testkit-impl-spotify" % "0.9.8" % Test,
-      "org.scalamock" %% "scalamock" % "4.1.0" % Test
+      "com.whisk" %% "docker-testkit-scalatest" % "0.9.9" % Test,
+      "com.whisk" %% "docker-testkit-impl-spotify" % "0.9.9" % Test,
+      "org.scalamock" %% "scalamock" % "4.4.0" % Test
     ),
 
     // set up separate tests and integration tests - http://www.scala-sbt.org/0.13.1/docs/Detailed-Topics/Testing.html#custom-test-configuration
@@ -210,13 +221,13 @@ lazy val cli = (project in file("cli"))
     name := "pfi-cli",
     scalacOptions := compilerFlags,
     libraryDependencies ++= Seq(
-      "org.rogach" %% "scallop" % "3.1.3",
+      "org.rogach" %% "scallop" % "3.5.1",
       "com.beachape" %% "enumeratum" % "1.5.13",
-      "com.squareup.okhttp3" % "okhttp" % "3.10.0",
+      "com.squareup.okhttp3" % "okhttp" % "4.9.2",
       "com.amazonaws" % "aws-java-sdk-s3" % awsVersion,
       "com.auth0" % "java-jwt" % "3.3.0",
-      "ch.qos.logback" % "logback-classic" % "1.2.3",
-      "org.slf4j" % "jcl-over-slf4j" % "1.7.25",
+      "org.slf4j" % "jcl-over-slf4j" % slf4jVersion,
+      "com.google.guava" % "guava" % "28.2-jre",
       "org.scalatest" %% "scalatest" % scalatestVersion
     ),
     run / fork := true,

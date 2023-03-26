@@ -19,7 +19,7 @@ import utils.attempt.{Attempt, Failure, IllegalStateFailure, NotFoundFailure}
 
 import java.nio.file.Path
 import java.time.Instant
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.concurrent.ExecutionContext
 
 object Neo4jManifest {
@@ -947,6 +947,30 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
     Right(WorkCounts(inProgress, outstanding))
   }
 
+  // Swallows errors if blob has not been processed with OcrMyPdfExtractor
+  // (simply returns an empty list)
+  override def getLanguagesProcessedByOcrMyPdf(uri: Uri): Attempt[List[Language]] = attemptTransaction { tx =>
+    tx.run(
+      """
+        |MATCH (r: Resource { uri: {uri} } )<-[p:PROCESSED]-(e :Extractor {name: "OcrMyPdfExtractor"})
+        |RETURN p.languages as languages
+      """.stripMargin,
+      parameters(
+        "uri", uri.value
+      )
+    ).map { queryResultSummary =>
+      val results = queryResultSummary.list().asScala.toList
+
+      results.headOption.toList.flatMap(r =>
+        r.get("languages")
+          .asList((v: Value) => v.asString())
+          .asScala
+          .toList
+          .flatMap(Languages.getByKey)
+      )
+    }
+  }
+
   private def processDelete(uri: Uri, query: String, correctResultsCount: Int => Boolean, errorText: String): Attempt[Unit] = attemptTransaction { tx =>
     tx.run(
       query,
@@ -963,34 +987,39 @@ class Neo4jManifest(driver: Driver, executionContext: ExecutionContext, queryLog
     }
   }
 
-  def deleteBlobWorkspaceNode(uri: Uri): Attempt[Unit] = processDelete(
-    uri,
-    """
-        |MATCH (w: WorkspaceNode:Resource { uri: { uri }})  DETACH DELETE w
-      """.stripMargin,
-    count => count == 1,
-    "Error deleting workspace node")
-
-  def deleteBlobFileParent(uri: Uri): Attempt[Unit] = processDelete(
-    uri,
-    """
-      |MATCH (: Blob:Resource { uri: { uri }}) -->(f: File) DETACH DELETE f
-      """.stripMargin,
-    count => count > 0,
-    "Error deleting file parent")
-
+  // If this blob has children, the neo4j structure beneath it (down to
+  // the next :Blob descendant) will be deleted. This leaves orphaned blobs
+  // in neo4j, elasticsearch and S3, but it is expected that it will be called either:
+  //   1. from the UI, in which case the operation is disallowed if it has children
+  //   2. as part of deleting an ingestion or collection, in which case those
+  //      orphaned blobs will have been returned from the initial getBlobs ES query
+  //      and will therefore be deleted separately as we loop through them.
   def deleteBlob(uri: Uri): Attempt[Unit] = processDelete(
     uri,
+    // OPTIONAL MATCH so if there's no Workspace node pointing to it,
+    // we still delete the blob, and vice versa. (The vice versa would be
+    // unexpected but maybe you're clearing up a blob that was only partially deleted before).
     """
-      |MATCH (b: Blob:Resource { uri: { uri }}) DETACH DELETE b
+      |OPTIONAL MATCH (w: WorkspaceNode { uri: { uri }})
+      |OPTIONAL MATCH (b: Blob:Resource { uri: { uri }})-[:PARENT]->(f: File)
+      |OPTIONAL MATCH (descendant :Resource)
+      |  WHERE descendant.uri STARTS WITH {uri}
+      |DETACH DELETE b, f, w, descendant
       """.stripMargin,
-    // We consider the deletion a success even if nothing has been deleted since the deletion may have been triggered
-    // from a list of results coming back from Elasticsearch (which is eventually consistent so doesn't immediately
-    // show that the delete happened). TODO MRB: handle this more gracefully at a higher level, it's a hack down here
-    count => count == 0 || count == 1,
+    // Always consider the deletion a success.
+    // We can't set a lower bound, because if nothing has been deleted,
+    // the deletion may have been triggered from a list of results coming
+    // back from Elasticsearch (which is eventually consistent so doesn't
+    // immediately show that the delete happened).
+    // TODO MRB: handle the above more gracefully at a higher level, it's a hack down here
+    // And we can't set an upper bound, because there will be an indeterminate
+    // number of descendants deleted.
+    count => true,
     "Error deleting blob")
 
-  def deleteIngestion(uri: Uri): Attempt[Unit] = attemptTransaction { tx =>
+  // This will delete descendants down to the next blobs,
+  // at which point the URL pattern starts again.
+  def deleteResourceAndDescendants(uri: Uri): Attempt[Unit] = attemptTransaction { tx =>
     tx.run(
       """
         |MATCH (r: Resource)

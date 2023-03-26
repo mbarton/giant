@@ -32,21 +32,23 @@ deployments:
     parameters:
       amiEncrypted: true
       amiTags:
-        Recipe: investigations-elasticsearch-7
+        Recipe: investigations-elasticsearch-7-arm64
         AmigoStage: PROD
         Encrypted: pfi-playground
 
   pfi:
     type: autoscaling
     parameters:
-      bucket: pfi-playground-dist
+      bucketSsmKey: /pfi-playground/artifact.bucket
+      bucketSsmLookup: true
     dependencies:
       - pfi-ami-update
 
   pfi-worker:
     type: autoscaling
     parameters:
-      bucket: pfi-playground-dist
+      bucketSsmKey: /pfi-playground/artifact.bucket
+      bucketSsmLookup: true
     actions:
       - deploy
     dependencies:

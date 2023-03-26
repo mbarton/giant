@@ -2,7 +2,6 @@ package services
 
 import java.io.{InputStream, StringWriter}
 import java.nio.file.Path
-
 import cats.syntax.either._
 import com.amazonaws.util.StringInputStream
 import extraction.email.mbox.MBoxEmailDetector
@@ -10,7 +9,7 @@ import extraction.email.olm.OlmEmailDetector
 import org.apache.tika.config.TikaConfig
 import org.apache.tika.detect.{CompositeDetector, DefaultDetector, Detector}
 import org.apache.tika.io.TikaInputStream
-import org.apache.tika.metadata.{HttpHeaders, Metadata, TikaMetadataKeys}
+import org.apache.tika.metadata.{HttpHeaders, Metadata, TikaCoreProperties}
 import org.apache.tika.mime.MediaType
 import org.apache.tika.parser.iwork.IWorkPackageParser
 import org.apache.tika.parser.iwork.iwana.IWork13PackageParser
@@ -23,7 +22,7 @@ import utils.Logging
 import utils.attempt.{Failure, UnknownFailure}
 
 import scala.util.Try
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 trait TypeDetector {
   def detectType(path: Path): Either[Failure, MediaType]
@@ -44,7 +43,7 @@ class Tika(detector: Detector, parser: Parser) extends TypeDetector {
 
     val detectedType = Try {
       val metadata = new Metadata
-      metadata.set(TikaMetadataKeys.RESOURCE_NAME_KEY, path.toString)
+      metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, path.toString)
       detector.detect(inputStream, metadata)
     }
 

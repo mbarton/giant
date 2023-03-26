@@ -28,7 +28,9 @@ trait Index {
 
   def flag(uri: Uri, flagValue: String): Attempt[Unit]
 
-  def getBlobs(collection: String, ingestion: String, size: Int): Attempt[Iterable[IndexedBlob]]
+  def getBlobs(collection: String, ingestion: Option[String], size: Int, inMultiple: Boolean): Attempt[Iterable[IndexedBlob]]
+
+  def countBlobs(collection: String, ingestion: Option[String], inMultiple: Boolean): Attempt[Long]
 
   def delete(id: String): Attempt[Unit]
 
